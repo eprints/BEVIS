@@ -47,13 +47,26 @@ Note that I recommend disabling any rate-limiting that mod_security may be perfo
 
 Even with Anubis configured some repositories have still experienced extremely heavy CPU load and been taken offline. An experimental rate and connection limiting and caching config for nginx is available. This enables a cache for non-logged in users accessing CPU heavy pages, and also limits for requests per IP and overall.
 
-The caching should be able to make a significant improvement in response times when under heavy load from some of the stranger bot swarms which make thousands of identical requests. In order to support caching, some minor changes are required to how EPrints uses cookies to store login sessions. The fixes are contained in z_fix_cookies.pl.disabled and this should be copied into the archive and enabled (remove .disabled from name) until this is fixed in EPrints core - hopefully in EPrints 3.4.8.
+The caching should be able to make a significant improvement in response times when under heavy load from some of the stranger bot swarms which make thousands of identical requests. In order to support caching, some minor changes are required to how EPrints uses cookies to store login sessions. The fixes are contained in z_fix_cookies.pl.disabled and this should be symlinked into the archive until this is fixed in EPrints core - hopefully in EPrints 3.4.8. You will also need to create the folder structure for the cache, and configure it in selinux. The idea behind having the cache folders owned and writable by the eprints user is so we could easily add admin tools for clearing the cache, if required.
+
+```
+ln -s /opt/eprints3/ingredients/anubis/cfg.d/z_fix_cookies.pl.disabled /opt/eprints3/archive/YOUR_ARCHIVE/cfg/cfg.d/z_fix_cookies.pl
+
+mkdir -p /opt/eprints3/var/cache/nginx/cpu_heavy_cache
+mkdir -p /opt/eprints3/var/cache/nginx/everything_else_cache
+
+sudo semanage fcontext -a -t httpd_cache_t "/opt/eprints3/var/cache/nginx/cpu_heavy_cache(/.*)?"
+sudo semanage fcontext -a -t httpd_cache_t "/opt/eprints3/var/cache/nginx/everything_else_cache(/.*)?"
+
+sudo restorecon -Rv /opt/eprints3/var/cache/nginx/cpu_heavy_cache
+sudo restorecon -Rv /opt/eprints3/var/cache/nginx/everything_else_cache
+```
 
 Nginx listens on port 4000, behind Anubis and in front of EPrints. It will limit rates globally and per-IP and limit the maximum number of simultanious connections to CPU heavy pages (configurable). When limits have been reached, an HTTP 503 is sent, with a page explaining which feature is temporarily offline. This should keep a lid on the maximum CPU usage and enable EPrints to stay alive, even if search, stats, and export functionality stops working.  The default configuration is intended to allow all connections through under normal load, and start blocking connections (responding with a page saying "[repo name] is under heavy load and [feature] is temporarily unavailable. Please try again later.") only when necessary to keep the server online and responding in a timely manner to other requests.
 
 Run `/opt/eprints3/ingredients/anubis/bin/generate_apacheconf_for_anubis --ratelimit` to configure Apache to forward to nginx and override the default HTTP 503 behaviour.
 
-Copy `/opt/eprints3/ingredients/anubis/rate_limiting/eprints_nginx_rate_limiting.conf` to `/opt/eprints/archives/[ARCHIVE ID]/nginx/eprints_nginx_rate_limiting.conf` where you can make archive specific changes. Then make sure that this is included in nginx. On Red Hat you will want to remove the `server {}` block in `/etc/nginx/nginx.conf` and create `/etc/nginx/conf.d/eprints.conf` with the content:
+Copy `/opt/eprints3/ingredients/anubis/rate_limiting/eprints_nginx_rate_limiting.conf` to `/opt/eprints/archives/[ARCHIVE ID]/nginx/eprints_nginx_rate_limiting.conf` where you can make archive specific changes. Then make sure that this is included in nginx. For caching to work, you will need to make nginx run as the user and group eprints. On Red Hat you will want to remove the `server {}` block in `/etc/nginx/nginx.conf` and create `/etc/nginx/conf.d/eprints.conf` with the content:
 
 ```
 include /opt/eprints3/archives/[YOUR ARCHIVE ID]/nginx/*.conf;
@@ -78,6 +91,7 @@ flowchart LR
       BAD(Bad Bot Rules Only)
       RATE(Rate & Connection Limiting)
       NGX(Nginx:4000 \neprints_nginx_rate_limiting.conf)
+      CACHE(Local Nginx Cache)
       
    end
 
@@ -88,6 +102,8 @@ flowchart LR
    ANU --> | All Other Pages | BAD
    BAD -.-> NGX
    NGX --> | CPU Heavy Pages | RATE
+   NGX --> CACHE
+   
    
    RATE -.->  EPR
    NGX --> | All Other Pages | EPR
