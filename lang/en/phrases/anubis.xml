@@ -6,4 +6,8 @@
 <epp:phrase id="Plugin/Screen/Admin/AnubisStatus:title">Anubis Status</epp:phrase>
 <epp:phrase id="Plugin/Screen/Admin/AnubisStatus:description">Status and statistics of the Anubis bot prevention service</epp:phrase>
 
+<epp:phrase id="Plugin/Screen/Admin/ClearNginxCache:action:clear_nginx_cache:title">Clear Nginx Cache</epp:phrase>
+<epp:phrase id="Plugin/Screen/Admin/ClearNginxCache:action:clear_nginx_cache:description">Clear's Nginx Cache used between Anubis and EPrints</epp:phrase>
+
+
 </epp:phrases>

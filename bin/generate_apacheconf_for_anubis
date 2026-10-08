@@ -369,8 +369,8 @@ EPrints->system->mkdir( $inc_ssl_path );
 # we are using the same port for all hosts because they will be virtualhosts on port 3000 - allowing anubis to just forward
 # everything to port 3000 and then apache sort it out to the respective eprints repositories
 my $eprints_local_port = 3000;
-# if nginx is running for rate limiting, it's on port 4000.
-my $nginx_ratelimit_local_port = 4000;
+# if nginx is running for rate limiting, it's on port 10001.
+my $nginx_ratelimit_local_port = 10001;
 
 # would like a way to be able to enable/disable the nginx rate limiting with a single script. However, there's no nice easy solution without root, and even with root
 # it's a bit messy. 

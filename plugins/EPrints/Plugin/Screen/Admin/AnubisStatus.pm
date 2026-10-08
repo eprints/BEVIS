@@ -33,6 +33,13 @@ sub new
 	return $self;
 }
 
+sub can_be_viewed
+{
+	my( $self ) = @_;
+
+    # if you can view the event queue, why not view anubis status?
+	return $self->allow( "event_queue/view" );
+}
 
 sub render
 {

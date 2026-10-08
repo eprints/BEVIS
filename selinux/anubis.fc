@@ -1,0 +1,2 @@
+/opt/eprints.*/var/cache/nginx/everything_else_cache(/.*)?             system_u:object_r:httpd_cache_t:s0
+/opt/eprints.*/var/cache/nginx/cpu_heavy_cache(/.*)?                   system_u:object_r:httpd_cache_t:s0

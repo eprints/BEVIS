@@ -62,7 +62,7 @@ sudo restorecon -Rv /opt/eprints3/var/cache/nginx/cpu_heavy_cache
 sudo restorecon -Rv /opt/eprints3/var/cache/nginx/everything_else_cache
 ```
 
-Nginx listens on port 4000, behind Anubis and in front of EPrints. It will limit rates globally and per-IP and limit the maximum number of simultanious connections to CPU heavy pages (configurable). When limits have been reached, an HTTP 503 is sent, with a page explaining which feature is temporarily offline. This should keep a lid on the maximum CPU usage and enable EPrints to stay alive, even if search, stats, and export functionality stops working.  The default configuration is intended to allow all connections through under normal load, and start blocking connections (responding with a page saying "[repo name] is under heavy load and [feature] is temporarily unavailable. Please try again later.") only when necessary to keep the server online and responding in a timely manner to other requests.
+Nginx listens on port 10001, behind Anubis and in front of EPrints. It will limit rates globally and per-IP and limit the maximum number of simultanious connections to CPU heavy pages (configurable). When limits have been reached, an HTTP 503 is sent, with a page explaining which feature is temporarily offline. This should keep a lid on the maximum CPU usage and enable EPrints to stay alive, even if search, stats, and export functionality stops working.  The default configuration is intended to allow all connections through under normal load, and start blocking connections (responding with a page saying "[repo name] is under heavy load and [feature] is temporarily unavailable. Please try again later.") only when necessary to keep the server online and responding in a timely manner to other requests.
 
 Run `/opt/eprints3/ingredients/anubis/bin/generate_apacheconf_for_anubis --ratelimit` to configure Apache to forward to nginx and override the default HTTP 503 behaviour.
 
@@ -74,15 +74,16 @@ include /opt/eprints3/archives/[YOUR ARCHIVE ID]/nginx/*.conf;
 
 On most other distros you will want to remove `/etc/nginx/sites_enabled/default` and create `/etc/nginx/sites_enabled/eprints.conf` with the above content instead.
 
+Note that the occasional segfaults (presumed to be caused by lack of thread safety and mpm_event) from Apache running EPrints cause greater issues when behind an Nginx proxy. So two instances of Apache are used - one in front using mpm_event and one for eprints using mpm_prefork. If we can find a way to use Shibboleth without apache, we can use nginx in front.
 
 ## Diagrams
 
-### With Rate Limiting using Nginx
+### With Rate Limiting and Caching using Nginx
 ```mermaid
 flowchart LR
    
-   TCP(Apache:80/443\nsecurevhosts.conf)
-   EPR(Apache for EPrints:3000\ncfg/apache/ARCHIVE.conf)
+   TCP(Apache 1:80/443\nsecurevhosts.conf\nmpm_event_module)
+   EPR(Apache 2 for EPrints:3000\ncfg/apache/ARCHIVE.conf\n mpm_prefork_module)
    
 
    subgraph Filtering and Rate Limiting
@@ -90,7 +91,7 @@ flowchart LR
       PROOF(Proof of Work)
       BAD(Bad Bot Rules Only)
       RATE(Rate & Connection Limiting)
-      NGX(Nginx:4000 \neprints_nginx_rate_limiting.conf)
+      NGX(Nginx:10001 \neprints_nginx_rate_limiting.conf)
       CACHE(Local Nginx Cache)
       
    end
@@ -110,7 +111,7 @@ flowchart LR
    
 ```
 
-### Without Rate Limiting
+### Without Nginx
 ```mermaid
 flowchart LR
    
@@ -148,51 +149,7 @@ This will put EPrints' Apache config back to how it was before. Anubis will stil
 
 ## SELinux
 
-If the Anubis Status page in EPrints shows a permission denied error, it is likely SELinux blocking apache/EPrints from making a request to Anubis' metrics.
-
-The following (as root) can fix this by adding in a rule:
-
-Create `anubismetrics.te` with the contents:
-
-```
-
-module anubismetrics 1.0;
-
-require {
-        type mysqld_tmp_t;
-        type websm_port_t;
-        type port_t;
-        type mysqld_port_t;
-        type httpd_t;
-        type init_t;
-        class file unlink;
-        class tcp_socket name_connect;
-}
-
-
-#============= httpd_t ==============
-
-#!!!! This avc can be allowed using one of the these booleans:
-#     httpd_can_network_connect, httpd_can_network_connect_db
-allow httpd_t mysqld_port_t:tcp_socket name_connect;
-
-#!!!! This avc can be allowed using one of the these booleans:
-#     httpd_can_network_connect, nis_enabled
-allow httpd_t port_t:tcp_socket name_connect;
-
-#!!!! This avc can be allowed using the boolean 'httpd_can_network_connect'
-allow httpd_t websm_port_t:tcp_socket name_connect;
-
-```
-
-Create `anubismetrics.mod` with:
-`checkmodule -M -m -o anubismetrics.mod anubismetrics.te`
-
-Create `anubismetrics.pp` file with:
-`semodule_package -o anubismetrics.pp -m anubismetrics.mod`
-
-Install this rule with:
-`semodule -i anubismetrics.pp`
+Run `sudo ./redeploy_policy.sh` to install the SELinux policy which should allow Apache to reach the status page of Anubis, and Nginx to manage its cache.
 
 For more help generating SELinux rules [the redhat docs](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/6/html/security-enhanced_linux/sect-security-enhanced_linux-fixing_problems-allowing_access_audit2allow) are very useful.
 
