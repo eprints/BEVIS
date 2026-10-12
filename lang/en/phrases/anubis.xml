@@ -9,5 +9,7 @@
 <epp:phrase id="Plugin/Screen/Admin/ClearNginxCache:action:clear_nginx_cache:title">Clear Nginx Cache</epp:phrase>
 <epp:phrase id="Plugin/Screen/Admin/ClearNginxCache:action:clear_nginx_cache:description">Clear's Nginx Cache used between Anubis and EPrints</epp:phrase>
 
+<epp:phrase id="Plugin/Screen/Admin/ClearNginxCache:clear_nginx_cache:done">Nginx cache cleared.</epp:phrase>
+
 
 </epp:phrases>

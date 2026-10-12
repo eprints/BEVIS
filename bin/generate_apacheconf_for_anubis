@@ -212,6 +212,7 @@ my $base_path = EPrints::Config::get( "base_path" );
 my $archives_path = "$base_path/archives";
 my $perl_lib = "$base_path/perl_lib";
 my $apache_eprints_conf = EPrints::Config::get( "cfg_path" )."/apache.conf";
+my $apache_ssl_conf = EPrints::Config::get( "cfg_path" )."/apache_ssl.conf";
 my $perl_module_isolation = EPrints::Config::get( "perl_module_isolation" );
 my $perl_module_isolation_conf = EPrints::Config::get( "cfg_path" )."/perl_module_isolation.conf";
 my $perl_module_isolation_vhost_conf = EPrints::Config::get( "cfg_path" )."/perl_module_isolation_vhost.conf";
@@ -279,6 +280,15 @@ while( my $line = <$securevhost>)  {
 		$archive_id_set_for_shib = 1;
 		if ($in_main_shib_location_block && $undo){
 			# strip the `PerlSetVar EPrints_ArchiveID` line inside this block
+			$keep_line = 0;
+			$securevhost_changed = 1;
+			print "Stripping line from securevhost.conf: '$line'\n" if $noise >= 1;
+		}
+	}
+
+	if(index($line, "PerlTransHandler") != -1){
+		if (!$undo){
+			# strip the `PerlTransHandler +EPrints::Apache::Rewrite` line from the file
 			$keep_line = 0;
 			$securevhost_changed = 1;
 			print "Stripping line from securevhost.conf: '$line'\n" if $noise >= 1;
@@ -399,8 +409,15 @@ if( !$undo )
 Listen [::1]:$eprints_local_port
 
 # Load the perl modules & repository configurations
-PerlSwitches -I$perl_lib
-Include $base_path/cfg/perl_module_isolation.conf
+# note various (failed) experiments to try and prevent httpd segfaulting in mpm event mode.
+# have given up and gone back to mpm prefork
+#PerlSwitches -I$perl_lib
+<Perl>
+	use lib qw ( $perl_lib );
+	use EPrints;
+</Perl>
+#Include $base_path/cfg/perl_module_isolation.conf
+PerlPostConfigHandler +EPrints::post_config_handler
 
 # Load the per-repository apache configuration
 Include $inc_path/*.conf
@@ -416,6 +433,18 @@ END
 	print "Wrote $apache_eprints_conf\n" if( $noise >= 1 );
 }
 
+if (!$undo)
+{
+	#get contents minus any line which contains "PerlTransHandler"
+	my $conf = `sed '/PerlTransHandler/d' $apache_ssl_conf`;
+
+	my $backup = EPrints->system->write_config_file( $apache_ssl_conf, $conf, BACKUP => 1 );
+	if( $backup )
+	{
+		print "Wrote $backup\n" if $noise >= 1;
+	}
+	print "Wrote $apache_ssl_conf\n" if( $noise >= 1 );
+}
 
 ####################################################
 # 
@@ -504,7 +533,9 @@ foreach my $repository ( values %reps )
 # This file will not be overwritten by generate_apacheconf_for_anubis, so you can modify it.
 
 ErrorLog /var/log/httpd/${id}_eprints_error.log
-CustomLog /var/log/httpd/${id}_eprints_access.log combined
+# also log response duration and anubis cookie presence, to aid analysing the impact
+CustomLog /var/log/httpd/${id}_eprints_access.log \"%h %T %l %u %t \\\"%r\\\" %>s %b \\\"%{Accept-Language}i\\\" \\\"%{Referer}i\\\" \\\"%{User-agent}i\\\" \\\"%{techaro.lol-anubis-cookie-verification}C\\\"\"
+#CustomLog /var/log/httpd/${id}_eprints_access.log combined
 ";
 			EPrints->system->write_config_file( $eprints_apachelog_conf, $logging_config_contents );
 		}

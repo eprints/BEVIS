@@ -53,6 +53,11 @@ sub action_clear_nginx_cache
 	EPrints::Utils::rmtree('/opt/eprints3/var/cache/nginx/everything_else_cache');
 	EPrints::Utils::rmtree('/opt/eprints3/var/cache/nginx/cpu_heavy_cache');
 
+	$self->{processor}->add_message( 
+			"message", 
+			$self->html_phrase( "clear_nginx_cache:done" ) 
+		);
+
 	# alternative mechanism is to configure the special purge request and send that
 
 }

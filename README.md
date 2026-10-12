@@ -8,41 +8,6 @@ The default configuration aims to reach a balance between being as open as possi
 
 Multiple repositories on the same host (with their own virtualhosts) is supported.
 
-## TODO List
- - Error message from generate_apacheconf_for_anubis or support for HTTP (no ssl) or HTTP & HTTPs with no HTTP->HTTPS redirect.
-
-## How to configure
-
-1. Ensure EPrints is currently configured to use SSL in the standard way [as per the wiki](https://wiki.eprints.org/w/How_to_use_EPrints_with_HTTPS) with the SSL configuration in archive/*/ssl/securevhost.conf
-2. Install Anubis. [Anubis official install guide](https://anubis.techaro.lol/docs/admin/native-install/). Official deb and RPM files are available.
-3. Install this ingredient: 
-   1. `cd /opt/eprints3/ingredients`
-   2. `git clone https://github.com/eprints/anubis.git`
-   3. `git checkout v0.6` (or whichever release your desire)
-   4. `echo "ingredients/anubis" >> /opt/eprints3/flavours/pub_lib/inc`
-4. Copy `/opt/eprints3/ingredients/anubis/anubis_config/eprints.botPolicies.yaml` to `/opt/eprints3/archives/[YOUR ARCHIVE ID]/anubis/eprints.botPolicies.yaml`
-   - Alternatively use `eprints_permissive.botPolicies.yaml` which only blocks known bad bots and otherwise won't do any proof of work
-5. Create `/etc/anubis/eprints.env` with: 
-```BIND=:8923
-DIFFICULTY=4
-METRICS_BIND=[::1]:9090
-METRICS_BIND_NETWORK=tcp
-SERVE_ROBOTS_TXT=0
-TARGET=http://[::1]:3000
-POLICY_FNAME=/opt/eprints3/archives/[YOUR ARCHIVE ID]/anubis/eprints.botPolicies.yaml
-```
-6. Enable and start systemd module for anubis for EPrints: `sudo systemctl enable --now anubis@eprints.service`. Do not proceed further until the anubis service is running!
-7. Run `/opt/eprints3/ingredients/anubis/bin/generate_apacheconf_for_anubis` to update EPrints apache config files to set up the Anubis proxy
-8. Confirm `/opt/eprints3/archives/[YOUR ARCHIVE ID]/ssl/securevhost.conf` is correct. In most circumstances it shouldn't need editing:
-   1.  It should already `Include /opt/eprints3/cfg/apache_ssl/[YOUR ARCHIVE ID].conf` which is now the anubis configuration rather than EPrints.
-   2.  Note that if you have any SSL aliases, you may have to re-configure the SSL redirects yourself in this file.
-   3.  An example SSL config file using Lets Encrypt is provided in `/opt/eprints3/ingredients/anubis/ssl/securevhost.conf.example` for reference. 
-9.  Restart apache: `sudo systemctl restart httpd` 
-
-If you need to revert the apache config changes use `/opt/eprints3/ingredients/anubis/bin/generate_apacheconf_for_anubis --undo`
-
-Note that I recommend disabling any rate-limiting that mod_security may be performing as I'm not sure how this interacts with Anubis.
-
 ## Rate Limiting and Caching With Nginx
 
 Even with Anubis configured some repositories have still experienced extremely heavy CPU load and been taken offline. An experimental rate and connection limiting and caching config for nginx is available. This enables a cache for non-logged in users accessing CPU heavy pages, and also limits for requests per IP and overall.
@@ -75,6 +40,68 @@ include /opt/eprints3/archives/[YOUR ARCHIVE ID]/nginx/*.conf;
 On most other distros you will want to remove `/etc/nginx/sites_enabled/default` and create `/etc/nginx/sites_enabled/eprints.conf` with the above content instead.
 
 Note that the occasional segfaults (presumed to be caused by lack of thread safety and mpm_event) from Apache running EPrints cause greater issues when behind an Nginx proxy. So two instances of Apache are used - one in front using mpm_event and one for eprints using mpm_prefork. If we can find a way to use Shibboleth without apache, we can use nginx in front.
+
+## TODO List
+ - Error message from generate_apacheconf_for_anubis or support for HTTP (no ssl) or HTTP & HTTPs with no HTTP->HTTPS redirect.
+
+## How to configure
+
+Note these instructions were written assuming RHEL. For other distros exact details will vary. Notably the name of the apache service ('httpd' on RHEL).
+
+### Just Anubis
+
+1. Ensure EPrints is currently configured to use SSL in the standard way [as per the wiki](https://wiki.eprints.org/w/How_to_use_EPrints_with_HTTPS) with the SSL configuration in archive/*/ssl/securevhost.conf
+2. Install Anubis. [Anubis official install guide](https://anubis.techaro.lol/docs/admin/native-install/). Official deb and RPM files are available.
+3. Install this ingredient: 
+   1. `cd /opt/eprints3/ingredients`
+   2. `git clone https://github.com/eprints/anubis.git`
+   3. `git checkout v0.6` (or whichever release your desire)
+   4. `echo "ingredients/anubis" >> /opt/eprints3/flavours/pub_lib/inc` (enables the ingredient)
+4. Copy `/opt/eprints3/ingredients/anubis/anubis_config/eprints.botPolicies.yaml` to `/opt/eprints3/archives/[YOUR ARCHIVE ID]/anubis/eprints.botPolicies.yaml`
+   - Alternatively use `eprints_permissive.botPolicies.yaml` which only blocks known bad bots and otherwise won't do any proof of work
+5. Create `/etc/anubis/eprints.env` with: 
+```BIND=:8923
+DIFFICULTY=4
+METRICS_BIND=[::1]:9090
+METRICS_BIND_NETWORK=tcp
+SERVE_ROBOTS_TXT=0
+TARGET=http://[::1]:3000
+POLICY_FNAME=/opt/eprints3/archives/[YOUR ARCHIVE ID]/anubis/eprints.botPolicies.yaml
+```
+6. Enable and start systemd module for anubis for EPrints: `sudo systemctl enable --now anubis@eprints.service`. Do not proceed further until the anubis service is running!
+7. Run `/opt/eprints3/ingredients/anubis/bin/generate_apacheconf_for_anubis` to update EPrints apache config files to set up the Anubis proxy
+8. Confirm `/opt/eprints3/archives/[YOUR ARCHIVE ID]/ssl/securevhost.conf` is correct. In most circumstances it shouldn't need editing:
+   1.  It should already `Include /opt/eprints3/cfg/apache_ssl/[YOUR ARCHIVE ID].conf` which is now the anubis configuration rather than EPrints.
+   2.  Note that if you have any SSL aliases, you may have to re-configure the SSL redirects yourself in this file.
+   3.  An example SSL config file using Lets Encrypt is provided in `/opt/eprints3/ingredients/anubis/ssl/securevhost.conf.example` for reference. 
+9.  Restart apache: `sudo systemctl restart httpd` 
+
+If you need to revert the apache config changes use `/opt/eprints3/ingredients/anubis/bin/generate_apacheconf_for_anubis --undo`
+
+Note that I recommend disabling any rate-limiting that mod_security may be performing as I'm not sure how this interacts with Anubis.
+
+### Anubis and Ningx
+
+Perform steps 1-5 above, then:
+
+1. Run `/opt/eprints3/ingredients/anubis/bin/generate_apacheconf_for_anubis --ratelimit` to update EPrints apache config files to set up the Anubis proxy
+2. Configure nginx (however you wish - this varies massively depending on linux distro) to NOT listen on port 80 or 443, and load /opt/eprints3/cfg/nginx/*.conf
+3. Edit `/etc/anubis/eprints.env` to target port 10001 (nginx in front of EPrints).
+4. Restart nginx, anubis and apache: `sudo systemctl restart httpd nginx anubis@eprints`.
+
+### Additional stability for EPrints
+
+EPrints segfaults occasionally when apache is configured to use mpm_event (multithreaded mode). EPrints is stable with mpm_prefork. Therefore to run a separate instance of apache purely for EPrints use the following steps:
+
+1. Delete`/etc/httpd/conf.d/eprints.conf` (so the default apache instance isn't running EPrints)
+2. Reload httpd so it's not listening on port 3000: `sudo systemctl reload httpd`
+3. Symlink new systemd service module 'httpd-eprints' `sudo ln -s /opt/eprints3/ingredients/anubis/systemd/httpd-eprints.service /etc/systemd/system/httpd-eprints.service` 
+4. Load new systemd service file `sudo systemctl daemon-reload`
+5. Enable and run httpd-eprints `sudo systemctl enable httpd-eprints --now`
+
+Now the front-facing web server (httpd) is in multithreaded mode and able to handle a large number of connections. EPrints is not, but won't see nearly as many connections due to the layers in front.
+
+If you do not need shibboleth support you could instead configure nginx to be out front. If you have EPrints working with shibboleth and nginx, please let me know how you did it and I will gladly update this ingredient!
 
 ## Diagrams
 
