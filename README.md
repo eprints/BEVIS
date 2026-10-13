@@ -88,6 +88,9 @@ Perform steps 1-5 above, then:
 2. Configure nginx (however you wish - this varies massively depending on linux distro) to NOT listen on port 80 or 443, and load /opt/eprints3/cfg/nginx/*.conf
 3. Edit `/etc/anubis/eprints.env` to target port 10001 (nginx in front of EPrints).
 4. Restart nginx, anubis and apache: `sudo systemctl restart httpd nginx anubis@eprints`.
+5. For EPrints 3.4.7 and below, symlink in the fixes for EPrints core. See [details for what these fixes do](#eprints-core-fixes) 
+   1. `ln -s /opt/eprints3/ingredients/anubis/cfg.d/z_fix_apacheconf.pl.disabled /opt/eprints3/archive/ARCHIVEID/cfg/cfg.d/z_fix_apacheconf.pl`
+   2. `ln -s /opt/eprints3/ingredients/anubis/cfg.d/z_fix_cookies.pl.disabled /opt/eprints3/archive/ARCHIVEID/cfg/cfg.d/z_fix_cookies.pl`
 
 ### Additional stability for EPrints
 
@@ -101,7 +104,13 @@ EPrints segfaults occasionally when apache is configured to use mpm_event (multi
 
 Now the front-facing web server (httpd) is in multithreaded mode and able to handle a large number of connections. EPrints is not, but won't see nearly as many connections due to the layers in front.
 
-If you do not need shibboleth support you could instead configure nginx to be out front. If you have EPrints working with shibboleth and nginx, please let me know how you did it and I will gladly update this ingredient!
+The long term plan is to have nginx as the front facing webserver so it can handle a large number of open connections. Until Shibboleth can be demonstrated working with this, Apache remains the front facing webserver.
+
+### EPrints Core Fixes
+
+`z_fix_apacheconf.pl` and `z_fix_cookies.pl` patch core code to simplify cookie names and re-arrange the apache configuration. Cookie names previously had the hostname in the name of the cookie and weren't deleted when logging out - making configuring the cache harder. The perl handler was previously configured in securevhost.conf and is now in the archive configuration.
+
+The aim is for these fixes to be included in core code for the next releases of EPrints (3.4.8 and 3.5.1).
 
 ## Diagrams
 
@@ -109,8 +118,8 @@ If you do not need shibboleth support you could instead configure nginx to be ou
 ```mermaid
 flowchart LR
    
-   TCP(Apache 1:80/443\nsecurevhosts.conf\nmpm_event_module)
-   EPR(Apache 2 for EPrints:3000\ncfg/apache/ARCHIVE.conf\n mpm_prefork_module)
+   TCP(Apache #1 Ports 80/443\nsecurevhosts.conf\nmpm_event_module)
+   EPRINTS(Apache #2\nEPrints on Port 3000\nmpm_prefork_module)
    
 
    subgraph Filtering and Rate Limiting
@@ -119,7 +128,7 @@ flowchart LR
       BAD(Bad Bot Rules Only)
       RATE(Rate & Connection Limiting)
       NGX(Nginx:10001 \neprints_nginx_rate_limiting.conf)
-      CACHE(Local Nginx Cache)
+      CACHE(Nginx Cache)
       
    end
 
@@ -130,11 +139,11 @@ flowchart LR
    ANU --> | All Other Pages | BAD
    BAD -.-> NGX
    NGX --> | CPU Heavy Pages | RATE
-   NGX --> CACHE
    
    
-   RATE -.->  EPR
-   NGX --> | All Other Pages | EPR
+   RATE -.->  CACHE
+   NGX --> | All Other Pages | CACHE
+   CACHE --> EPRINTS
    
 ```
 
@@ -184,7 +193,7 @@ For more help generating SELinux rules [the redhat docs](https://docs.redhat.com
 
 In `/opt/eprints3/archives/[YOUR ARCHIVE ID]/anubis/eprints.botPolicies.yaml` the default Anubis bot list is used and a proof-of-work check is enabled only for stats and search. Export may also need to be covered, we are still experimenting with the best policy.
 
-# IP Whitelist
+# Anubis IP Whitelist
 
 The remote_addresses argument expects CIDR notation, for a single IP use "/32".
 
