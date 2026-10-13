@@ -213,6 +213,8 @@ my $archives_path = "$base_path/archives";
 my $perl_lib = "$base_path/perl_lib";
 my $apache_eprints_conf = EPrints::Config::get( "cfg_path" )."/apache.conf";
 my $apache_ssl_conf = EPrints::Config::get( "cfg_path" )."/apache_ssl.conf";
+my $nginx_conf_dir = EPrints::Config::get( "cfg_path" )."/nginx";
+my $nginx_conf = $nginx_conf_dir."/eprints_nginx_rate_limiting.conf";
 my $perl_module_isolation = EPrints::Config::get( "perl_module_isolation" );
 my $perl_module_isolation_conf = EPrints::Config::get( "cfg_path" )."/perl_module_isolation.conf";
 my $perl_module_isolation_vhost_conf = EPrints::Config::get( "cfg_path" )."/perl_module_isolation_vhost.conf";
@@ -657,6 +659,22 @@ Include $ratelimit_errorpages_conf
 		print STDERR "max_upload_filesize not configured";
 	}
 }
+
+if ($ratelimit && !$undo)
+{
+	#copy default nginx config into place
+	if( !-e $nginx_conf)
+	{
+		print "eprints_nginx_rate_limiting.conf not present, copying default\n";
+		`mkdir -p $nginx_conf_dir`;
+		File::Copy::copy("$base_path/ingredients/anubis/rate_limiting/eprints_nginx_rate_limiting.conf", $nginx_conf);
+	}
+	else
+	{
+		print "eprints_nginx_rate_limiting.conf already present, not altering. You may want to double check this is still up to date\n";
+	}
+}
+
 my $anubis_config_path = "/etc/anubis/eprints.env";
 # Get what's after the last colon, which should be the port number
 my $anubis_forwards_to_port = `awk -F ':' '/TARGET/{print \$NF}' $anubis_config_path`;
