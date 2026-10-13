@@ -7,6 +7,7 @@ require {
         type mysqld_port_t;
         type httpd_t;
         type init_t;
+        type ntop_port_t;
         class file unlink;
         class tcp_socket name_connect;
 }
@@ -24,3 +25,6 @@ allow httpd_t port_t:tcp_socket name_connect;
 
 #!!!! This avc can be allowed using the boolean 'httpd_can_network_connect'
 allow httpd_t websm_port_t:tcp_socket name_connect;
+
+#!!!! This avc can be allowed using the boolean 'httpd_can_network_connect'
+allow httpd_t ntop_port_t:tcp_socket name_connect;
