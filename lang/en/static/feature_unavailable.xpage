@@ -1,0 +1,10 @@
+<?xml version="1.0" standalone="no" ?>
+<!DOCTYPE page SYSTEM "entities.dtd" >
+<xpage:page xmlns="http://www.w3.org/1999/xhtml" xmlns:xpage="http://eprints.org/ep3/xpage" xmlns:epc="http://eprints.org/ep3/control">
+<xpage:title>Feature is Unavailable</xpage:title>
+<xpage:body>
+
+<p>Sorry, <epc:phrase ref="archive_name" /> is under heavy load and this feature is temporarily unavailable. Please try again later.</p>
+
+</xpage:body>
+</xpage:page>

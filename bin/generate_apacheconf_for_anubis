@@ -142,6 +142,7 @@ my $help = 0;
 my $man = 0;
 my $undo = 0;
 my $ratelimit = 0;
+my $nginxfront = 0;
 
 Getopt::Long::Configure("permute");
 
@@ -213,8 +214,8 @@ my $archives_path = "$base_path/archives";
 my $perl_lib = "$base_path/perl_lib";
 my $apache_eprints_conf = EPrints::Config::get( "cfg_path" )."/apache.conf";
 my $apache_ssl_conf = EPrints::Config::get( "cfg_path" )."/apache_ssl.conf";
-my $nginx_conf_dir = EPrints::Config::get( "cfg_path" )."/nginx";
-my $nginx_conf = $nginx_conf_dir."/eprints_nginx_rate_limiting.conf";
+my $nginx_conf_dir = "$archives_path/$default_repo_id/nginx";
+my $nginx_ratelimit_conf = "$nginx_conf_dir/eprints_nginx_rate_limiting.conf";
 my $perl_module_isolation = EPrints::Config::get( "perl_module_isolation" );
 my $perl_module_isolation_conf = EPrints::Config::get( "cfg_path" )."/perl_module_isolation.conf";
 my $perl_module_isolation_vhost_conf = EPrints::Config::get( "cfg_path" )."/perl_module_isolation_vhost.conf";
@@ -662,18 +663,27 @@ Include $ratelimit_errorpages_conf
 
 if ($ratelimit && !$undo)
 {
-	#copy default nginx config into place
-	if( !-e $nginx_conf)
+	#copy default nginx configs into place
+	if( !-e $nginx_ratelimit_conf)
 	{
+		# this is the config for the reverse proxy between anubis and internal eprints
+		# this is copied into the archive because it's likely going to need per-archive tweaks
 		print "eprints_nginx_rate_limiting.conf not present, copying default\n";
 		`mkdir -p $nginx_conf_dir`;
-		File::Copy::copy("$base_path/ingredients/anubis/rate_limiting/eprints_nginx_rate_limiting.conf", $nginx_conf);
+		File::Copy::copy("$base_path/ingredients/anubis/nginx/eprints_nginx_rate_limiting.conf", $nginx_ratelimit_conf);
 	}
 	else
 	{
 		print "eprints_nginx_rate_limiting.conf already present, not altering. You may want to double check this is still up to date\n";
 	}
+
+	
 }
+
+# Note, not doing anything with the front facing nginx config since the configuration for a front facing apache server isn't included here so
+# nor should the front facing nginx config. Instead a file will be provided in the repo (nginx_front_facing.conf) and it will be up to the user (or ansible)
+# to configure nginx. Converting the SSL configuration from apache to nginx will almost certainly require manual intervention.
+
 
 my $anubis_config_path = "/etc/anubis/eprints.env";
 # Get what's after the last colon, which should be the port number
