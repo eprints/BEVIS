@@ -545,7 +545,7 @@ CustomLog /var/log/httpd/${id}_eprints_access.log \"%h %T %l %u %t \\\"%r\\\" %>
 
 		if($ratelimit && !-e $ratelimit_errorpages_conf){
 			# there isn't an errorpages override config file and we need one because ratelimiting is enabled
-			`cp /opt/eprints3/ingredients/anubis/rate_limiting/503_error_handling.conf $ratelimit_errorpages_conf`
+			`cp /opt/eprints3/ingredients/anubis/apache/503_error_handling.conf $ratelimit_errorpages_conf`
 		}
 
 		my $fake_repo = FakeRepo->new($repository, $eprints_local_port);
