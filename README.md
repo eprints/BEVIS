@@ -85,12 +85,22 @@ Note that I recommend disabling any rate-limiting that mod_security may be perfo
 Perform steps 1-5 above, then:
 
 1. Run `/opt/eprints3/ingredients/anubis/bin/generate_apacheconf_for_anubis --ratelimit` to update EPrints apache config files to set up the Anubis proxy
-2. Configure nginx (however you wish - this varies massively depending on linux distro) to NOT listen on port 80 or 443, and load /opt/eprints3/cfg/nginx/*.conf
+2. Configure nginx (however you wish - this varies massively depending on linux distro) to NOT listen on port 80 or 443, and :`include /opt/eprints3/archives/*/nginx/*.conf`
 3. Edit `/etc/anubis/eprints.env` to target port 10001 (nginx in front of EPrints).
 4. Restart nginx, anubis and apache: `sudo systemctl restart httpd nginx anubis@eprints`.
 5. For EPrints 3.4.7 and below, symlink in the fixes for EPrints core. See [details for what these fixes do](#eprints-core-fixes) 
    1. `ln -s /opt/eprints3/ingredients/anubis/cfg.d/z_fix_apacheconf.pl.disabled /opt/eprints3/archive/ARCHIVEID/cfg/cfg.d/z_fix_apacheconf.pl`
    2. `ln -s /opt/eprints3/ingredients/anubis/cfg.d/z_fix_cookies.pl.disabled /opt/eprints3/archive/ARCHIVEID/cfg/cfg.d/z_fix_cookies.pl`
+
+### Nginx as the front-facing Webserver
+
+Note: this is still untested with Shibboleth.
+
+1. Copy config: `cp /opt/eprints3/ingredients/anubis/nginx/nginx_front_facing.conf  /opt/eprints3/archives/REPOID/nginx/nginx_front_facing.conf`
+2. Stop apache `sudo systemctl disable --now httpd`
+3. Restart nginx: `sudo systemctl restart nginx`
+
+The motivation is that nginx can handle larger numbers of connections than Apache, and we can have a minimal set of modules enabled.
 
 ### Additional stability for EPrints
 
@@ -118,12 +128,12 @@ The aim is for these fixes to be included in core code for the next releases of 
 ```mermaid
 flowchart LR
    
-   TCP(Apache #1 Ports 80/443\nsecurevhosts.conf\nmpm_event_module)
+   TCP(Apache or Nginx :80/443\nsecurevhosts.conf or nginx_front_facing.conf)
    EPRINTS(Apache #2\nEPrints on Port 3000\nmpm_prefork_module)
    
 
    subgraph Filtering and Rate Limiting
-      ANU(Anubis:9090)
+      ANU(Anubis :9090)
       PROOF(Proof of Work)
       BAD(Bad Bot Rules Only)
       RATE(Rate & Connection Limiting)
@@ -134,6 +144,7 @@ flowchart LR
 
    
    TCP -->  ANU
+   TCP --> | Shibboleth Single Sign On | EPRINTS
    ANU --> | CPU Heavy Pages | PROOF
    PROOF -.-> NGX
    ANU --> | All Other Pages | BAD
