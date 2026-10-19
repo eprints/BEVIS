@@ -663,18 +663,22 @@ Include $ratelimit_errorpages_conf
 
 if ($ratelimit && !$undo)
 {
-	#copy default nginx configs into place
+	#symlink default nginx config into place
 	if( !-e $nginx_ratelimit_conf)
 	{
 		# this is the config for the reverse proxy between anubis and internal eprints
-		# this is copied into the archive because it's likely going to need per-archive tweaks
-		print "eprints_nginx_rate_limiting.conf not present, copying default\n";
+		# this is symlinked into the archive because so it's easy to replace with a copy if we need per-archive tweaks
+		print "eprints_nginx_rate_limiting.conf not present, symlinking default\n";
 		`mkdir -p $nginx_conf_dir`;
-		File::Copy::copy("$base_path/ingredients/anubis/nginx/eprints_nginx_rate_limiting.conf", $nginx_ratelimit_conf);
+		`ln -s $base_path/ingredients/anubis/nginx/eprints_nginx_rate_limiting.conf $nginx_ratelimit_conf`;
+		# File::Copy::copy("$base_path/ingredients/anubis/nginx/eprints_nginx_rate_limiting.conf", $nginx_ratelimit_conf);
 	}
 	else
 	{
-		print "eprints_nginx_rate_limiting.conf already present, not altering. You may want to double check this is still up to date\n";
+		if(! -l $nginx_ratelimit_conf)
+		{
+			print "$nginx_ratelimit_conf already present and isn't a symlink. You may want to double check this is still up to date\n";
+		}
 	}
 
 	
