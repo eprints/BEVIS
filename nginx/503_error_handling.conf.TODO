@@ -1,6 +1,6 @@
 # provide a "normal" eprints page with text explaining that this feature is temporarily offline if the URL was blocked by the rate and connection limiter
-# Note, only ProxyErrorOverride On for specific URLs otherwise we risk overriding the login page (which returns 401)
-# Documentation seems to suggest you can't put ProxyErrorOverride in a Location block, but it appears to be working? Need to test on more platforms.
+
+# not being used, as this doesn't work in nginx config! So instead in nginx_front_facing.conf we have one generic 503 page
 
 location ~ "/cgi/(search|facet)/(archive/)?(advanced|simple|simple2)"
 {
