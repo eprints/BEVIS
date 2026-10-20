@@ -92,15 +92,6 @@ Perform steps 1-5 above, then:
    1. `ln -s /opt/eprints3/ingredients/anubis/cfg.d/z_fix_apacheconf.pl.disabled /opt/eprints3/archive/ARCHIVEID/cfg/cfg.d/z_fix_apacheconf.pl`
    2. `ln -s /opt/eprints3/ingredients/anubis/cfg.d/z_fix_cookies.pl.disabled /opt/eprints3/archive/ARCHIVEID/cfg/cfg.d/z_fix_cookies.pl`
 
-### Nginx as the front-facing Webserver
-
-Note: this is still untested with Shibboleth.
-
-1. Copy config: `cp /opt/eprints3/ingredients/anubis/nginx/nginx_front_facing.conf  /opt/eprints3/archives/REPOID/nginx/nginx_front_facing.conf`
-2. Stop apache `sudo systemctl disable --now httpd`
-3. Restart nginx: `sudo systemctl restart nginx`
-
-The motivation is that nginx can handle larger numbers of connections than Apache, and we can have a minimal set of modules enabled.
 
 ### Additional stability for EPrints
 
@@ -115,6 +106,17 @@ EPrints segfaults occasionally when apache is configured to use mpm_event (multi
 Now the front-facing web server (httpd) is in multithreaded mode and able to handle a large number of connections. EPrints is not, but won't see nearly as many connections due to the layers in front.
 
 The long term plan is to have nginx as the front facing webserver so it can handle a large number of open connections. Until Shibboleth can be demonstrated working with this, Apache remains the front facing webserver.
+
+### Nginx as the front-facing Webserver
+
+Note: this is still untested with Shibboleth. This assumes that EPrints is running within a new instance of apache, as per [Additional stability for EPrints](#additional-stability-for-ePrints)
+
+1. Symlink config: `ln -s /opt/eprints3/ingredients/anubis/nginx/nginx_front_facing.conf  /opt/eprints3/archives/REPOID/nginx/nginx_front_facing.conf`
+2. Create `/opt/eprints3/archives/REPOID/ssl/nginx-ssl.nginxconf` to configure SSL for nginx. This will be included from nginx_front_facing.conf.
+3. Stop apache `sudo systemctl disable --now httpd`
+4. Restart nginx: `sudo systemctl restart nginx`
+
+The motivation is that nginx can handle larger numbers of connections than Apache, and will use less memory and CPU as it won't have perl (and other modules) loaded.
 
 ### EPrints Core Fixes
 
