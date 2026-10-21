@@ -555,7 +555,7 @@ CustomLog /var/log/httpd/${id}_eprints_access.log \"%h %T %l %u %t \\\"%r\\\" %>
 		$new_config_contents =~ s/PerlSetVar EPrints_ArchiveID $id/PerlSetVar EPrints_ArchiveID $id\n    PerlSetVar EPrints_Secure yes/;
 
 		# add https:// to front of ServerName. Otherwise shibd won't kick in and recognise a POST request to /Shibboleth.sso
-		$new_config_contents =~ s@ServerName @# Note need https:// for Shibboleth to work\nServerName https://@;
+		$new_config_contents =~ s@ServerName @# Note need https:// for Shibboleth to work\n  ServerName https://@;
 
 		$new_config_contents =~ s/ServerAdmin/Include $eprints_apachelog_conf\n\n  ServerAdmin/;
 
@@ -574,23 +574,23 @@ CustomLog /var/log/httpd/${id}_eprints_access.log \"%h %T %l %u %t \\\"%r\\\" %>
    
    # Shibboleth login support. 
    Alias /shibboleth /opt/eprints3/archives/anubis_test/shibboleth
-	<Location /shibboleth>
-		SetHandler perl-script
-		PerlHandler ModPerl::Registry
-		PerlSendHeader Off
-		Options ExecCGI FollowSymLinks
+    <Location /shibboleth>
+        SetHandler perl-script
+        PerlHandler ModPerl::Registry
+        PerlSendHeader Off
+        Options ExecCGI FollowSymLinks
 
-		AuthType shibboleth
-		ShibRequestSetting requireSession 1
-		require shib-session
-		PerlSetVar EPrints_ArchiveID anubis_test
-	</Location>
+        AuthType shibboleth
+        ShibRequestSetting requireSession 1
+        require shib-session
+        PerlSetVar EPrints_ArchiveID anubis_test
+    </Location>
 
-	<Location /cgi/shibboleth>
-		AuthType shibboleth
-		ShibRequestSetting requireSession 1
-		Require shib-session
-	</Location> ";
+    <Location /cgi/shibboleth>
+        AuthType shibboleth
+        ShibRequestSetting requireSession 1
+        Require shib-session
+    </Location> ";
 
 		#$new_config_contents =~ s@</VirtualHost>@  # Get the real remote IP back, otherwise all accesses appear to come from ::1\n  <IfModule remoteip_module>\n    RemoteIPHeader X-Real-IP\n    RemoteIPTrustedProxy ::1\n  </IfModule>\n</VirtualHost>@;
 		$new_config_contents =~ s@</VirtualHost>@$extra_bits\n</VirtualHost>@;
