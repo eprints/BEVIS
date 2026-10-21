@@ -1,4 +1,4 @@
-module anubis 1.0;
+module BEVIS 1.0;
 
 require {
         type mysqld_tmp_t;
