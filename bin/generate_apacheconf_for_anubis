@@ -567,7 +567,7 @@ CustomLog /var/log/httpd/${id}_eprints_access.log \"%h %T %l %u %t \\\"%r\\\" %>
 		#   </IfModule>
 
 		my $extra_bits = "   # Get the real remote IP back, otherwise all accesses appear to come from ::1
-   IfModule remoteip_module>
+   <IfModule remoteip_module>
      RemoteIPHeader X-Real-IP
      RemoteIPTrustedProxy ::1
    </IfModule>
