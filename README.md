@@ -132,6 +132,7 @@ d /var/log/nginx     711 root  root -
     1.  `Include /opt/eprints3/cfg/apache.conf`
     2.  Uses mpm_prefork
     3.  `MaxConnectionsPerChild 1000`
+    4.  See `apache/apache.conf` for a simple replacement
 16. Run `/opt/eprints3/ingredients/anubis/bin/generate_apacheconf_for_anubis` to update EPrints Apache config files
 17. Restart apache and nginx: `sudo systemctl restart httpd nginx` 
 
