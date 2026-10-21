@@ -555,7 +555,7 @@ CustomLog /var/log/httpd/${id}_eprints_access.log \"%h %T %l %u %t \\\"%r\\\" %>
 		$new_config_contents =~ s/PerlSetVar EPrints_ArchiveID $id/PerlSetVar EPrints_ArchiveID $id\n    PerlSetVar EPrints_Secure yes/;
 
 		# add https:// to front of ServerName. Otherwise shibd won't kick in and recognise a POST request to /Shibboleth.sso
-		$new_config_contents =~ s@ServerName@ServerName https://@;
+		$new_config_contents =~ s@ServerName @ServerName https://@;
 
 		$new_config_contents =~ s/ServerAdmin/Include $eprints_apachelog_conf\n\n  ServerAdmin/;
 
