@@ -406,6 +406,26 @@ Include $extra_inc_path/*.conf
 	$new_config_contents =~ s/  # Include any legacy directives\n//;
 	$new_config_contents =~ s/  Include $apachevhost\n\n//;
 
+	# note - can't easily redirect aliases here, because to get to the internal apache config you've gone through nginx and SSL
+	# and for any other domain the SSL certificate will have been invalid.
+	# to redirect HTTP that will have to be done in nginx config
+# 	my $securehost = $repository->get_conf( "securehost" );
+# 	foreach my $alias (@{$repository->config( "aliases" )})
+# 	{
+# 		if($alias->{'redirect'} eq "yes")
+# 		{
+# 			my $name = $alias->{name};
+# 			my $alias_conf = "<VirtualHost *:3000>
+# 	ServerName $name
+# 	Redirect / https://$securehost/
+# </VirtualHost>";
+
+# 			$new_config_contents .= $alias_conf;
+# 		}
+# 	}
+
+
+
 	my $backup = EPrints->system->write_config_file( $eprints_apache_conf_file, $new_config_contents );
 	if( $backup )
 	{

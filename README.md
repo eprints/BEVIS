@@ -127,7 +127,6 @@ d /var/log/nginx     711 root  root -
 13. Replace the default nginx configuration to one which will `include /opt/eprints3/ingredients/BEVIS/nginx/*.conf;`
 14. For versions of EPrints 3.4.7 and below, symlink in some fixes:
     1.  `ln -s /opt/eprints3/ingredients/BEVIS/cfg.d/z_fix_cookies.pl.disabled /opt/eprints3/archives/REPO_ID/cfg/cfg.d/z_fix_cookies.pl`
-    2.  `ln -s /opt/eprints3/ingredients/BEVIS/cfg.d/z_fix_apacheconf.pl.disabled /opt/eprints3/archives/REPO_ID/cfg/cfg.d/z_fix_apacheconf.pl`
 15. Backup default apache config and replace with apache/apache.conf. This new config file:
     1.  Uses mpm_prefork
     2.  `Include /opt/eprints3/cfg/apache_internal.conf`
