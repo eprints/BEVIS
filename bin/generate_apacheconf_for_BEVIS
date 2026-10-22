@@ -167,7 +167,6 @@ EPrints->system->mkdir( $nginx_conf_dir );
 my $found_shibboleth = 0;
 
 my $securevhost_file = "$archives_path/$default_repo_id/ssl/securevhost.conf";
-my $securevhost_extras_file = "$archives_path/$default_repo_id/ssl/securevhost.extras.conf";
 open my $securevhost, $securevhost_file or die "Could not open $securevhost_file: $!";
 
 
@@ -227,7 +226,7 @@ close $securevhost;
 if($found_non_shib_location_blocks){
 	print "Found parts of securevhost.conf that may require moving into extras.\n";
 	print "$non_shib_location_block_contents\n";
-	print "\nThis has been copied into $extra_inc_path/extras.conf.review";
+	print "This has been copied into $extra_inc_path/extras.conf.review\n";
 	
 	EPrints->system->write_config_file( "$extra_inc_path/extras.conf.review", $non_shib_location_block_contents, BACKUP => 1 );
 }
@@ -374,6 +373,9 @@ CustomLog /var/log/httpd/${id}_eprints_access.log \"%h %T %l %u %t \\\"%r\\\" %>
 	RemoteIPHeader X-Real-IP
 	RemoteIPTrustedProxy ::1
 </IfModule>
+
+Include $extra_inc_path/*.conf
+
 <IfModule mod_shib>
 	# Shibboleth login support. 
 	Alias /shibboleth /opt/eprints3/archives/anubis_test/shibboleth
