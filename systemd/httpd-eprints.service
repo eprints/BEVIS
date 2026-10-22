@@ -1,0 +1,22 @@
+# Based on httpd.service
+
+[Unit]
+Description=The Apache HTTP Server for EPrints
+Wants=httpd-init.service
+After=network.target remote-fs.target nss-lookup.target httpd-init.service
+Documentation=man:httpd.service(8)
+
+[Service]
+Type=notify
+Environment=LANG=C
+
+ExecStart=/usr/sbin/httpd -f /opt/eprints3/ingredients/anubis/apache/apache.conf -DFOREGROUND
+ExecReload=/usr/sbin/httpd -f /opt/eprints3/ingredients/anubis/apache/apache.conf -k graceful
+# Send SIGWINCH for graceful stop
+KillSignal=SIGWINCH
+KillMode=mixed
+PrivateTmp=true
+OOMPolicy=continue
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+# provide a "normal" eprints page with text explaining that this feature is temporarily offline if the URL was blocked by the rate and connection limiter
+
+# not being used, as this doesn't work in nginx config! So instead in nginx_front_facing.conf we have one generic 503 page
+
+location ~ "/cgi/(search|facet)/(archive/)?(advanced|simple|simple2)"
+{
+    error_page  503 /search_unavailable.html
+}
+
+location "/cgi/stats"
+{
+    error_page 503 /stats_unavailable.html
+}
+
+location ~ "/cgi/export(view)?"
+{
+    error_page 503 /export_unavailable.html
+}

@@ -1,0 +1,69 @@
+# For EPrints 3.4.7 and below, the login session cookie name has the hostname in it.
+# this makes using nginx to cache results from EPrints much harder than it needs to be
+# So, patch it hackily until it's fixed properly in core
+# This will also remove the cookie when logging out
+
+
+package EPrints::DataObj::LoginTicket;
+use strict;
+
+no warnings 'redefine';
+
+our $SESSION_KEY = "eprints_session";
+our $SECURE_SESSION_KEY = "secure_eprints_session";
+
+sub session_key
+{
+	my ($class, $repo) = @_;
+
+	# for caching to be easy to configure, keep the domain out of the cookie name (note - may have issues with eprints on main domain AND subdomain)
+	return $SESSION_KEY;
+
+}
+
+
+######################################################################
+=pod
+
+=item EPrints::DataObj::LoginTicket->secure_session_key($repo)
+
+See L</session_key>.
+
+=cut
+######################################################################
+
+sub secure_session_key
+{
+	my ($class, $repo) = @_;
+	# for caching to be easy to configure, keep the domain out of the cookie name (note - may have issues with eprints on main domain AND subdomain)
+	return $SECURE_SESSION_KEY;
+}
+
+sub remove
+{
+	my ($self) = @_;
+
+	# carry on removing loginticket from database
+	$self->SUPER::remove();
+
+	# but also remove the user's cookie, to make testing the cache easier
+
+	my $repo = $self->{session};
+
+	my $domain = $repo->config( "host" );
+	$domain ||= $repo->config( "securehost" );
+
+	$repo->get_request->err_headers_out->add(
+		'Set-Cookie' => $repo->query->cookie(
+			-name    => $self->secure_session_key($repo),
+			-path    => ($repo->config( "https_root" ) || '/'),
+			-value   => 'blank',
+			-domain  => $repo->config( "securehost" ),
+			-secure  => 1,
+			-samesite => 'Strict',
+			-expires =>  "-1d",
+		)			
+	);
+
+
+}

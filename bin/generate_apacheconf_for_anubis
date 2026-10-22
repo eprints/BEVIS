@@ -142,6 +142,7 @@ my $help = 0;
 my $man = 0;
 my $undo = 0;
 my $ratelimit = 0;
+my $nginxfront = 0;
 
 Getopt::Long::Configure("permute");
 
@@ -212,6 +213,9 @@ my $base_path = EPrints::Config::get( "base_path" );
 my $archives_path = "$base_path/archives";
 my $perl_lib = "$base_path/perl_lib";
 my $apache_eprints_conf = EPrints::Config::get( "cfg_path" )."/apache.conf";
+my $apache_ssl_conf = EPrints::Config::get( "cfg_path" )."/apache_ssl.conf";
+my $nginx_conf_dir = "$archives_path/$default_repo_id/nginx";
+my $nginx_ratelimit_conf = "$nginx_conf_dir/eprints_nginx_rate_limiting.conf";
 my $perl_module_isolation = EPrints::Config::get( "perl_module_isolation" );
 my $perl_module_isolation_conf = EPrints::Config::get( "cfg_path" )."/perl_module_isolation.conf";
 my $perl_module_isolation_vhost_conf = EPrints::Config::get( "cfg_path" )."/perl_module_isolation_vhost.conf";
@@ -279,6 +283,15 @@ while( my $line = <$securevhost>)  {
 		$archive_id_set_for_shib = 1;
 		if ($in_main_shib_location_block && $undo){
 			# strip the `PerlSetVar EPrints_ArchiveID` line inside this block
+			$keep_line = 0;
+			$securevhost_changed = 1;
+			print "Stripping line from securevhost.conf: '$line'\n" if $noise >= 1;
+		}
+	}
+
+	if(index($line, "PerlTransHandler") != -1){
+		if (!$undo){
+			# strip the `PerlTransHandler +EPrints::Apache::Rewrite` line from the file
 			$keep_line = 0;
 			$securevhost_changed = 1;
 			print "Stripping line from securevhost.conf: '$line'\n" if $noise >= 1;
@@ -369,8 +382,8 @@ EPrints->system->mkdir( $inc_ssl_path );
 # we are using the same port for all hosts because they will be virtualhosts on port 3000 - allowing anubis to just forward
 # everything to port 3000 and then apache sort it out to the respective eprints repositories
 my $eprints_local_port = 3000;
-# if nginx is running for rate limiting, it's on port 4000.
-my $nginx_ratelimit_local_port = 4000;
+# if nginx is running for rate limiting, it's on port 10001.
+my $nginx_ratelimit_local_port = 10001;
 
 # would like a way to be able to enable/disable the nginx rate limiting with a single script. However, there's no nice easy solution without root, and even with root
 # it's a bit messy. 
@@ -399,8 +412,15 @@ if( !$undo )
 Listen [::1]:$eprints_local_port
 
 # Load the perl modules & repository configurations
-PerlSwitches -I$perl_lib
-Include $base_path/cfg/perl_module_isolation.conf
+# note various (failed) experiments to try and prevent httpd segfaulting in mpm event mode.
+# have given up and gone back to mpm prefork
+#PerlSwitches -I$perl_lib
+<Perl>
+	use lib qw ( $perl_lib );
+	use EPrints;
+</Perl>
+#Include $base_path/cfg/perl_module_isolation.conf
+PerlPostConfigHandler +EPrints::post_config_handler
 
 # Load the per-repository apache configuration
 Include $inc_path/*.conf
@@ -416,6 +436,18 @@ END
 	print "Wrote $apache_eprints_conf\n" if( $noise >= 1 );
 }
 
+if (!$undo)
+{
+	#get contents minus any line which contains "PerlTransHandler"
+	my $conf = `sed '/PerlTransHandler/d' $apache_ssl_conf`;
+
+	my $backup = EPrints->system->write_config_file( $apache_ssl_conf, $conf, BACKUP => 1 );
+	if( $backup )
+	{
+		print "Wrote $backup\n" if $noise >= 1;
+	}
+	print "Wrote $apache_ssl_conf\n" if( $noise >= 1 );
+}
 
 ####################################################
 # 
@@ -504,14 +536,16 @@ foreach my $repository ( values %reps )
 # This file will not be overwritten by generate_apacheconf_for_anubis, so you can modify it.
 
 ErrorLog /var/log/httpd/${id}_eprints_error.log
-CustomLog /var/log/httpd/${id}_eprints_access.log combined
+# also log response duration and anubis cookie presence, to aid analysing the impact
+CustomLog /var/log/httpd/${id}_eprints_access.log \"%h %T %l %u %t \\\"%r\\\" %>s %b \\\"%{Accept-Language}i\\\" \\\"%{Referer}i\\\" \\\"%{User-agent}i\\\" \\\"%{techaro.lol-anubis-cookie-verification}C\\\"\"
+#CustomLog /var/log/httpd/${id}_eprints_access.log combined
 ";
 			EPrints->system->write_config_file( $eprints_apachelog_conf, $logging_config_contents );
 		}
 
 		if($ratelimit && !-e $ratelimit_errorpages_conf){
 			# there isn't an errorpages override config file and we need one because ratelimiting is enabled
-			`cp /opt/eprints3/ingredients/anubis/rate_limiting/503_error_handling.conf $ratelimit_errorpages_conf`
+			`cp /opt/eprints3/ingredients/anubis/apache/503_error_handling.conf $ratelimit_errorpages_conf`
 		}
 
 		my $fake_repo = FakeRepo->new($repository, $eprints_local_port);
@@ -520,15 +554,46 @@ CustomLog /var/log/httpd/${id}_eprints_access.log combined
 		# add the secure option because we will be presented to the world on https, even if internally it's http
 		$new_config_contents =~ s/PerlSetVar EPrints_ArchiveID $id/PerlSetVar EPrints_ArchiveID $id\n    PerlSetVar EPrints_Secure yes/;
 
+		# add https:// to front of ServerName. Otherwise shibd won't kick in and recognise a POST request to /Shibboleth.sso
+		$new_config_contents =~ s@ServerName @# Note need https:// for Shibboleth to work\n  ServerName https://@;
+
 		$new_config_contents =~ s/ServerAdmin/Include $eprints_apachelog_conf\n\n  ServerAdmin/;
 
 		# add the following block to undo the proxy for remote-ip, so eprints can be blissfully unaware its behind a proxy
 		# # Get the real remote IP back, otherwise all accesses appear to come from ::1
 		#   <IfModule remoteip_module>
-		#     RemoteIPHeader X-Real-Ip
+		#     RemoteIPHeader X-Real-IP
 		#     RemoteIPTrustedProxy ::1
 		#   </IfModule>
-		$new_config_contents =~ s@</VirtualHost>@  # Get the real remote IP back, otherwise all accesses appear to come from ::1\n  <IfModule remoteip_module>\n    RemoteIPHeader X-Real-Ip\n    RemoteIPTrustedProxy ::1\n  </IfModule>\n</VirtualHost>@;
+
+		my $extra_bits = "   # Get the real remote IP back, otherwise all accesses appear to come from ::1
+   <IfModule remoteip_module>
+     RemoteIPHeader X-Real-IP
+     RemoteIPTrustedProxy ::1
+   </IfModule>
+   
+   # Shibboleth login support. 
+   Alias /shibboleth /opt/eprints3/archives/anubis_test/shibboleth
+    <Location /shibboleth>
+        SetHandler perl-script
+        PerlHandler ModPerl::Registry
+        PerlSendHeader Off
+        Options ExecCGI FollowSymLinks
+
+        AuthType shibboleth
+        ShibRequestSetting requireSession 1
+        require shib-session
+        PerlSetVar EPrints_ArchiveID anubis_test
+    </Location>
+
+    <Location /cgi/shibboleth>
+        AuthType shibboleth
+        ShibRequestSetting requireSession 1
+        Require shib-session
+    </Location> ";
+
+		#$new_config_contents =~ s@</VirtualHost>@  # Get the real remote IP back, otherwise all accesses appear to come from ::1\n  <IfModule remoteip_module>\n    RemoteIPHeader X-Real-IP\n    RemoteIPTrustedProxy ::1\n  </IfModule>\n</VirtualHost>@;
+		$new_config_contents =~ s@</VirtualHost>@$extra_bits\n</VirtualHost>@;
 		
 		# do NOT include this legacy file as it can result in a redirect loop!
 		my $apachevhost = $repository->config( "config_path" )."/apachevhost.conf";
@@ -626,6 +691,35 @@ Include $ratelimit_errorpages_conf
 		print STDERR "max_upload_filesize not configured";
 	}
 }
+
+if ($ratelimit && !$undo)
+{
+	#symlink default nginx config into place
+	if( !-e $nginx_ratelimit_conf)
+	{
+		# this is the config for the reverse proxy between anubis and internal eprints
+		# this is symlinked into the archive because so it's easy to replace with a copy if we need per-archive tweaks
+		print "eprints_nginx_rate_limiting.conf not present, symlinking default\n";
+		`mkdir -p $nginx_conf_dir`;
+		`ln -s $base_path/ingredients/anubis/nginx/eprints_nginx_rate_limiting.conf $nginx_ratelimit_conf`;
+		# File::Copy::copy("$base_path/ingredients/anubis/nginx/eprints_nginx_rate_limiting.conf", $nginx_ratelimit_conf);
+	}
+	else
+	{
+		if(! -l $nginx_ratelimit_conf)
+		{
+			print "$nginx_ratelimit_conf already present and isn't a symlink. You may want to double check this is still up to date\n";
+		}
+	}
+
+	
+}
+
+# Note, not doing anything with the front facing nginx config since the configuration for a front facing apache server isn't included here so
+# nor should the front facing nginx config. Instead a file will be provided in the repo (nginx_front_facing.conf) and it will be up to the user (or ansible)
+# to configure nginx. Converting the SSL configuration from apache to nginx will almost certainly require manual intervention.
+
+
 my $anubis_config_path = "/etc/anubis/eprints.env";
 # Get what's after the last colon, which should be the port number
 my $anubis_forwards_to_port = `awk -F ':' '/TARGET/{print \$NF}' $anubis_config_path`;
