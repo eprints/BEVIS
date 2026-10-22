@@ -1,0 +1,476 @@
+#!/usr/bin/perl -w
+
+use FindBin;
+use lib "$FindBin::Bin/../../..//perl_lib";
+
+######################################################################
+#
+#
+######################################################################
+
+=pod
+
+=for Pod2Wiki
+
+=head1 NAME
+
+B<generate_apacheconf_for_BEVIS> - Create the apache config files needed for EPrints to run internally on port 3000
+
+=head1 SYNOPSIS
+
+=head1 DESCRIPTION
+
+This script generates the Apache config files to run EPrints on port 3000.
+
+The configuration files generated will be completely independent of the original apache configuration
+
+The SSL configuration at archive/REPO_ID/ssl/securevhost.conf will be processed to see if there are any added Location blocks,
+and these will be imported into an extras file to be included in the new internal EPrints config.
+
+It will produce the following config files:
+
+/opt/eprints3/cfg/apache_internal.conf
+/opt/eprints3/cfg/apache_internal.conf includes /opt/eprints3/cfg/apache_internal/*.conf
+/opt/eprints3/cfg/apache/REPOID.conf  listens on port 3000
+/opt/eprints3/cfg/apache/extras/*.conf will be optionally included from REPOID.conf
+
+=head2 Adding to Apache Configuration
+
+To configure Apache to host only the internal EPrints and not listen on ports 80 and 443 you will want to replace the default Apache configuration.
+
+I suggest you make a backup first if you need to revert.
+
+sudo cp /etc/httpd/conf/httpd.conf /etc/httpd/conf/httpd.conf.backup
+sudo cp /opt/eprints3/ingredients/BEVIS/apache/apache.conf /etc/httpd/conf/httpd.conf
+
+=item B<--help>
+
+Print a brief help message and exit.
+
+=item B<--man>
+
+Print the full manual page and then exit.
+
+=item B<--quiet>
+
+Be vewwy vewwy quiet. This option will suppress all output unless an error occurs.
+
+=item B<--verbose>
+
+Explain in detail what is going on.
+May be repeated for greater effect.
+
+=item B<--version>
+
+Output version information and exit.
+
+=back 
+
+=head1 FILES
+
+=over 4
+
+=item B<EPRINTS/cfg/apache_internal.conf>
+
+Loads the EPrints environment and repository-specific configuration files.
+
+=item B<EPRINTS/cfg/apache/[repoid].conf>
+
+A <VirtualHost> that responds to the configured hostname and port of the
+repository.
+
+=back
+
+
+=cut
+
+
+use EPrints;
+
+use strict;
+use Getopt::Long;
+use Pod::Usage;
+use Digest::MD5;
+
+my $version = 0;
+my $verbose = 0;
+my $quiet = 0;
+my $help = 0;
+my $man = 0;
+
+Getopt::Long::Configure("permute");
+
+GetOptions( 
+	'help|?' => \$help,
+	'man' => \$man,
+	'version' => \$version,
+	'verbose+' => \$verbose,
+	'silent' => \$quiet,
+	'quiet' => \$quiet,
+) || pod2usage( 2 );
+EPrints::Utils::cmd_version( "generate_apacheconf_for_BEVIS" ) if $version;
+pod2usage( 1 ) if $help;
+pod2usage( -exitstatus => 0, -verbose => 2 ) if $man;
+pod2usage( 2 ) if( scalar @ARGV > 1 );
+
+our( $repository_id ) = @ARGV;
+
+our $noise = 1;
+$noise = 0 if( $quiet );
+$noise = 1+$verbose if( $verbose );
+
+
+#cjg Write a more simple conf if only one language involved?
+
+# Set STDOUT to auto flush (without needing a \n)
+$|=1;
+
+my $shibboleth = 0;
+
+my $eprints = EPrints->new;
+
+# Load up the repositories
+my $default_repo_id=undef;
+my %reps = ();
+my $found_archives = 0;
+foreach my $id ( $eprints->repository_ids() )
+{
+	$reps{$id} = $eprints->repository( $id, db_connect => 0); 
+	EPrints->abort( "Error loading $id" ) if !defined $reps{$id};
+	$found_archives += 1;
+	if(!defined $default_repo_id){
+		$default_repo_id = $id;
+	}
+}
+
+if($found_archives == 0){
+	print "No configured archive found, cannot proceed\n";
+	exit 1;
+}
+
+
+my $base_path = EPrints::Config::get( "base_path" );
+my $archives_path = "$base_path/archives";
+my $perl_lib = "$base_path/perl_lib";
+my $apache_eprints_conf = EPrints::Config::get( "cfg_path" )."/apache_internal.conf";
+my $nginx_conf_dir = "$archives_path/$default_repo_id/nginx";
+
+
+my $inc_path = "$base_path/cfg/apache_internal";
+# extra files to be included that may require customising
+my $extra_inc_path = "$base_path/cfg/apache_internal/extra";
+
+EPrints->system->mkdir( $inc_path );
+EPrints->system->mkdir( $extra_inc_path );
+EPrints->system->mkdir( $nginx_conf_dir );
+
+my $found_shibboleth = 0;
+
+my $securevhost_file = "$archives_path/$default_repo_id/ssl/securevhost.conf";
+my $securevhost_extras_file = "$archives_path/$default_repo_id/ssl/securevhost.extras.conf";
+open my $securevhost, $securevhost_file or die "Could not open $securevhost_file: $!";
+
+
+my $in_location_block = 0;
+my $in_main_shib_location_block = 0;
+my $in_a_shib_location_block = 0;
+#to make shibboleth work in front of anubis, without the rest of eprints, we need to add `PerlSetVar EPrints_ArchiveID [ARCHIVE ID]`. Has this already been done?
+my $archive_id_set_for_shib = 0;
+
+my $new_securevhost_contents = "";
+
+my $non_shib_location_block_contents = "";
+my $found_non_shib_location_blocks = 0;
+
+my $keep_line = 1;
+
+# looping through the lines of securevhost.conf, looking for location blocks to idenfity if shibboleth is configured and if there's anything which needs moving into extras
+# because securevhost.conf is no longer loaded when using BEVIS
+while( my $line = <$securevhost>)  {   
+
+	if(index($line, "<Location") != -1){
+		$in_location_block = 1;
+	}
+	
+	if(index($line, "shibboleth") != -1){
+		if(not $found_shibboleth){
+			print "Looks like shibboleth is configured\n";
+		}
+		$found_shibboleth = 1;
+		if($in_location_block){
+			$in_a_shib_location_block = 1;
+		}
+	}
+
+	if($in_location_block && !$in_a_shib_location_block){
+		$non_shib_location_block_contents .= $line;
+		$found_non_shib_location_blocks = 1;
+		# future idea: could we automatically generate securevhost.extras.conf? 
+		# I suspect this will be made up entirely of edge cases, so will leave to a human to do manually for now.
+		# $keep_line = 0;
+	}
+
+	if(index($line, "<Location /shibboleth") != -1 || index($line, "<Location \"/shibboleth") != -1){
+		$in_main_shib_location_block = 1;
+	}
+
+	if(index($line, "</Location") != -1){
+
+		$in_location_block = 0;
+		$in_main_shib_location_block = 0;
+		$in_a_shib_location_block = 0;
+	}
+}
+
+close $securevhost;
+
+if($found_non_shib_location_blocks){
+	print "Found parts of securevhost.conf that may require moving into extras.\n";
+	print "$non_shib_location_block_contents\n";
+	print "\nThis has been copied into $extra_inc_path/extras.conf.review";
+	
+	EPrints->system->write_config_file( "$extra_inc_path/extras.conf.review", $non_shib_location_block_contents, BACKUP => 1 );
+}
+
+
+
+
+# we are using the same port for all hosts because they will be virtualhosts on port 3000 - allowing anubis to just forward
+# everything to port 3000 and then apache sort it out to the respective eprints repositories
+my $eprints_local_port = 3000;
+
+# note various (failed) experiments to try and prevent httpd segfaulting in mpm event mode.
+# have given up and gone back to mpm prefork
+# <Perl>
+# use lib qw ( $perl_lib );
+# use EPrints;
+# </Perl>
+#Include $base_path/cfg/perl_module_isolation.conf
+
+my $conf = <<END;
+#
+# apache_internal.conf include file for EPrints
+#
+# Any changes made here will be lost if you run generate_apacheconf_for_BEVIS
+#
+
+# EPrints moved to be internal-only, with nginx facing the outside world.
+Listen [::1]:$eprints_local_port
+
+# Load the perl modules & repository configurations
+
+PerlSwitches -I/opt/eprints3/perl_lib
+PerlModule EPrints
+PerlPostConfigHandler +EPrints::post_config_handler
+
+# Load the per-repository apache configuration
+Include $inc_path/*.conf
+
+END
+my $backup = EPrints->system->write_config_file( $apache_eprints_conf, $conf, BACKUP => 1 );
+if( $backup )
+{
+	print "Wrote $backup\n" if $noise >= 1;
+}
+print "Wrote $apache_eprints_conf\n" if( $noise >= 1 );
+
+
+####################################################
+# 
+#   Write apache conf files for each repository
+#
+####################################################
+
+# Bodge - we want to call EPrints::Apache::apache_conf but we want to overide a handful of repo config options. This class lets us do just that
+package FakeRepo;
+
+sub new {
+	my ($class, $real_repo, $port) = @_;
+	
+	my $self = bless {}, $class;
+
+	$self->{real_repo} = $real_repo;
+	$self->{port} =  $port;
+
+	return $self;
+}
+
+sub get_id{
+	my ($self) = @_;
+
+	return $self->{real_repo}->get_id;
+}
+
+sub get_conf { return config( @_ ); }
+sub config {
+	my ($self, $config_name) = @_;
+
+	if($config_name eq "port"){
+		#we want to listen on http but on port 3000 (by default, can be overriden)
+		return $self->{port};
+	}
+
+	if($config_name eq "http_url"){
+		#pretend to be HTTP so we get the full HTTP-only config file
+		return "http://literallyAnything";
+	}
+
+	if($config_name eq "aliases"){
+		#pretend there aren't any aliases so we just get a virtualhost block for port 3000
+		return undef;
+	}
+
+	# fall back to real config
+	return $self->{real_repo}->get_conf($config_name);
+}
+
+
+foreach my $repository ( values %reps ) 
+{
+	my $id = $repository->get_id();
+
+	#if one repo has been explicitly requested, skip all the others
+	next if $repository_id && $repository_id ne $id;
+
+	my $eprints_apache_conf_file = "$inc_path/$id.conf";
+
+	my $eprints_apachelog_conf = "$extra_inc_path/$id.logging.conf";
+	
+	my $javascript_auto_dir = $repository->get_conf( "base_path" ) . "/archives/$id/cfg/static/javascript/auto/";
+	my $uploadmethod_file_max_size = $javascript_auto_dir . "99_uploadmethod_file_max_size.js";
+
+	# all hosts will be on the same internal port with apache virtualhosts sorting them out after anubis forwards requests to $eprints_local_port (3000 by default)
+
+	# separate out the logging commands so these can be easily manually altered, without fear that this script will overwrite them
+
+	if(! -e $eprints_apachelog_conf){
+		# there isn't a config file with logging yet
+		my $logging_config_contents = "
+
+# This file configures the apache logs of EPrints itself. Only requests passed through anubis to EPrints can make it this far.
+# This file will not be overwritten by generate_apacheconf_for_BEVIS, so you can modify it.
+
+ErrorLog /var/log/httpd/${id}_eprints_error.log
+# also log response duration and anubis cookie presence, to aid analysing the impact
+CustomLog /var/log/httpd/${id}_eprints_access.log \"%h %T %l %u %t \\\"%r\\\" %>s %b \\\"%{Accept-Language}i\\\" \\\"%{Referer}i\\\" \\\"%{User-agent}i\\\" \\\"%{techaro.lol-anubis-cookie-verification}C\\\"\"
+#CustomLog /var/log/httpd/${id}_eprints_access.log combined
+";
+		EPrints->system->write_config_file( $eprints_apachelog_conf, $logging_config_contents );
+	}
+
+	my $fake_repo = FakeRepo->new($repository, $eprints_local_port);
+	my $new_config_contents = EPrints::Apache::apache_conf( $fake_repo );
+
+	# add the secure option because we will be presented to the world on https, even if internally it's http
+	$new_config_contents =~ s/PerlSetVar EPrints_ArchiveID $id/PerlSetVar EPrints_ArchiveID $id\n    PerlSetVar EPrints_Secure yes/;
+
+	# add https:// to front of ServerName. Otherwise shibd won't kick in and recognise a POST request to /Shibboleth.sso
+	$new_config_contents =~ s@ServerName @# Note need https:// for Shibboleth to work\n  ServerName https://@;
+
+	$new_config_contents =~ s/ServerAdmin/Include $eprints_apachelog_conf\n\n  ServerAdmin/;
+
+	my $extra_bits = "   # Get the real remote IP back, otherwise all accesses appear to come from ::1
+<IfModule remoteip_module>
+	RemoteIPHeader X-Real-IP
+	RemoteIPTrustedProxy ::1
+</IfModule>
+<IfModule mod_shib>
+	# Shibboleth login support. 
+	Alias /shibboleth /opt/eprints3/archives/anubis_test/shibboleth
+	<Location /shibboleth>
+		SetHandler perl-script
+		PerlHandler ModPerl::Registry
+		PerlSendHeader Off
+		Options ExecCGI FollowSymLinks
+
+		AuthType shibboleth
+		ShibRequestSetting requireSession 1
+		require shib-session
+		PerlSetVar EPrints_ArchiveID anubis_test
+	</Location>
+
+	<Location /cgi/shibboleth>
+		AuthType shibboleth
+		ShibRequestSetting requireSession 1
+		Require shib-session
+	</Location> 
+</IfModule>";
+	#$new_config_contents =~ s@</VirtualHost>@  # Get the real remote IP back, otherwise all accesses appear to come from ::1\n  <IfModule remoteip_module>\n    RemoteIPHeader X-Real-IP\n    RemoteIPTrustedProxy ::1\n  </IfModule>\n</VirtualHost>@;
+	$new_config_contents =~ s@</VirtualHost>@$extra_bits\n</VirtualHost>@;
+	
+	# do NOT include this legacy file as it can result in a redirect loop!
+	my $apachevhost = $repository->config( "config_path" )."/apachevhost.conf";
+	
+	$new_config_contents =~ s/  # Include any legacy directives\n//;
+	$new_config_contents =~ s/  Include $apachevhost\n\n//;
+
+	my $backup = EPrints->system->write_config_file( $eprints_apache_conf_file, $new_config_contents );
+	if( $backup )
+	{
+		print "Wrote $backup\n" if( $noise >= 1 );
+	}
+	print "Wrote $eprints_apache_conf_file\n" if( $noise >= 1 );
+	
+
+	# note nginx does a simple redirect of all traffic from http to https, maintaining whatever hostname was requested.
+	# if we want to redirect aliases, we can do that eprints side
+
+}
+
+
+#symlink default nginx config into place in the archive
+foreach my $nginx_file (qw(eprints_nginx_rate_limiting.conf nginx_front_facing.conf))
+{
+	my $file_in_place = "$nginx_conf_dir/$nginx_file";
+	
+	if( ! -e $file_in_place)
+	{
+		# this is the config for the reverse proxy between anubis and internal eprints
+		# this is symlinked into the archive because so it's easy to replace with a copy if we need per-archive tweaks
+		print "$file_in_place not present, symlinking default\n";
+		
+		`ln -s $base_path/ingredients/BEVIS/nginx/$nginx_file $file_in_place`;
+	}
+	else
+	{
+		if(! -l $file_in_place)
+		{
+			print "$file_in_place already present and isn't a symlink. You may want to double check this is still up to date\n";
+		}
+	}
+
+}
+
+print "\nYou must confirm that httpd's config file is a copy of /opt/eprints3/ingredients/BEVIS/apache/apache.conf. Then reload nginx and httpd for any changes to take effect!\n" if( $noise >= 1 );
+
+
+=head1 COPYRIGHT
+
+=for COPYRIGHT BEGIN
+
+Copyright 2023 University of Southampton.
+EPrints 3.4 is supplied by EPrints Services.
+
+http://www.eprints.org/eprints-3.4/
+
+=for COPYRIGHT END
+
+=for LICENSE BEGIN
+
+This file is part of EPrints 3.4 L<http://www.eprints.org/>.
+
+EPrints 3.4 and this file are released under the terms of the
+GNU Lesser General Public License version 3 as published by
+the Free Software Foundation unless otherwise stated.
+
+EPrints 3.4 is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+See the GNU Lesser General Public License for more details.
+
+You should have received a copy of the GNU Lesser General Public
+License along with EPrints 3.4.
+If not, see L<http://www.gnu.org/licenses/>.
+
+=for LICENSE END
+

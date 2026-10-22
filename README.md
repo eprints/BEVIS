@@ -128,12 +128,11 @@ d /var/log/nginx     711 root  root -
 14. For versions of EPrints 3.4.7 and below, symlink in some fixes:
     1.  `ln -s /opt/eprints3/ingredients/BEVIS/cfg.d/z_fix_cookies.pl.disabled /opt/eprints3/archives/REPO_ID/cfg/cfg.d/z_fix_cookies.pl`
     2.  `ln -s /opt/eprints3/ingredients/BEVIS/cfg.d/z_fix_apacheconf.pl.disabled /opt/eprints3/archives/REPO_ID/cfg/cfg.d/z_fix_apacheconf.pl`
-15. Reconfigure Apache so it does not listen on port 80 or 443 and:
-    1.  `Include /opt/eprints3/cfg/apache.conf`
-    2.  Uses mpm_prefork
+15. Backup default apache config and replace with apache/apache.conf. This new config file:
+    1.  Uses mpm_prefork
+    2.  `Include /opt/eprints3/cfg/apache_internal.conf`
     3.  `MaxConnectionsPerChild 1000`
-    4.  See `apache/apache.conf` for a simple replacement
-16. Run `/opt/eprints3/ingredients/anubis/bin/generate_apacheconf_for_anubis` to update EPrints Apache config files
+16. Run `/opt/eprints3/ingredients/anubis/bin/generate_apacheconf_for_BEVIS` to update EPrints Apache config files
 17. Restart apache and nginx: `sudo systemctl restart httpd nginx` 
 
 If all goes well it should work!
@@ -178,10 +177,11 @@ Check the X-Cache-Status header of responses. Note that if you are logged in, ng
 
 ## How to unconfigure
 
-If anything has gone wrong, or for whatever reason you need to remove BEVIS, you can run:
-`/opt/eprints3/ingredients/anubis/bin/generate_apacheconf_for_anubis --undo`
+If anything has gone wrong, or for whatever reason you need to remove BEVIS:
 
-Then disable nginx, undo the changes to Apache's configuration and restart apache.
+ - revert your original Apache config
+ - disable nginx
+ - restart Apache
 
 This will put EPrints' Apache config back to how it was before. Anubis will still be running as a service in the background, but Apache will not be routing any traffic through it.
 
