@@ -1,0 +1,1 @@
+$c->{BEVIS}->{max_filesize_to_cache} = 100000;
