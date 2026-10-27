@@ -378,7 +378,7 @@ Include $extra_inc_path/*.conf
 
 <IfModule mod_shib>
 	# Shibboleth login support. 
-	Alias /shibboleth /opt/eprints3/archives/anubis_test/shibboleth
+	Alias /shibboleth /opt/eprints3/archives/$id/shibboleth
 	<Location /shibboleth>
 		SetHandler perl-script
 		PerlHandler ModPerl::Registry
@@ -388,7 +388,7 @@ Include $extra_inc_path/*.conf
 		AuthType shibboleth
 		ShibRequestSetting requireSession 1
 		require shib-session
-		PerlSetVar EPrints_ArchiveID anubis_test
+		PerlSetVar EPrints_ArchiveID $id
 	</Location>
 
 	<Location /cgi/shibboleth>
