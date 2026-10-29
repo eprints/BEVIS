@@ -8,8 +8,11 @@ require {
         type httpd_t;
         type init_t;
         type ntop_port_t;
+        type httpd_tmp_t;
         class file unlink;
         class tcp_socket name_connect;
+        class dir rmdir;
+        
 }
 
 
