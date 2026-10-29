@@ -28,3 +28,6 @@ allow httpd_t websm_port_t:tcp_socket name_connect;
 
 #!!!! This avc can be allowed using the boolean 'httpd_can_network_connect'
 allow httpd_t ntop_port_t:tcp_socket name_connect;
+
+#============= init_t ==============
+allow init_t httpd_tmp_t:dir rmdir;
