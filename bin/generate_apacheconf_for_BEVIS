@@ -366,7 +366,7 @@ CustomLog /var/log/httpd/${id}_eprints_access.log \"%h %T %l %u %t \\\"%r\\\" %>
 	# add https:// to front of ServerName. Otherwise shibd won't kick in and recognise a POST request to /Shibboleth.sso
 	$new_config_contents =~ s@ServerName @# Note need https:// for Shibboleth to work\n  ServerName https://@;
 
-	$new_config_contents =~ s/ServerAdmin/Include $eprints_apachelog_conf\n\n  ServerAdmin/;
+	# Note, do not include the .logging.conf file specifically, it will be included from Include $extra_inc_path/*.conf below
 
 	my $extra_bits = "   # Get the real remote IP back, otherwise all accesses appear to come from ::1
 <IfModule remoteip_module>
