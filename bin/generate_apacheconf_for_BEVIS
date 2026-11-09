@@ -133,12 +133,18 @@ my $eprints = EPrints->new;
 my $default_repo_id=undef;
 my %reps = ();
 my $found_archives = 0;
+
+my $base_path = EPrints::Config::get( "base_path" );
+my $archives_path = "$base_path/archives";
+my $perl_lib = "$base_path/perl_lib";
+
 foreach my $id ( $eprints->repository_ids() )
 {
 	$reps{$id} = $eprints->repository( $id, db_connect => 0); 
 	EPrints->abort( "Error loading $id" ) if !defined $reps{$id};
 	$found_archives += 1;
-	if(!defined $default_repo_id){
+	if(!defined $default_repo_id && -e "$archives_path/$id/ssl/securevhost.conf"){
+		# can only be the default repo if it has an ssl config
 		$default_repo_id = $id;
 	}
 }
@@ -149,9 +155,7 @@ if($found_archives == 0){
 }
 
 
-my $base_path = EPrints::Config::get( "base_path" );
-my $archives_path = "$base_path/archives";
-my $perl_lib = "$base_path/perl_lib";
+
 my $apache_eprints_conf = EPrints::Config::get( "cfg_path" )."/apache_internal.conf";
 my $nginx_conf_dir = "$archives_path/$default_repo_id/nginx";
 
@@ -226,9 +230,9 @@ close $securevhost;
 if($found_non_shib_location_blocks){
 	print "Found parts of securevhost.conf that may require moving into extras.\n";
 	print "$non_shib_location_block_contents\n";
-	print "This has been copied into $extra_inc_path/extras.conf.review\n";
+	print "This has been copied into $extra_inc_path/$default_repo_id.extras.conf.review\n";
 	
-	EPrints->system->write_config_file( "$extra_inc_path/extras.conf.review", $non_shib_location_block_contents, BACKUP => 1 );
+	EPrints->system->write_config_file( "$extra_inc_path/$default_repo_id.extras.conf.review", $non_shib_location_block_contents, BACKUP => 1 );
 }
 
 
@@ -360,12 +364,14 @@ CustomLog /var/log/httpd/${id}_eprints_access.log \"%h %T %l %u %t \\\"%r\\\" %>
 	my $fake_repo = FakeRepo->new($repository, $eprints_local_port);
 	my $new_config_contents = EPrints::Apache::apache_conf( $fake_repo );
 
-	# add the secure option because we will be presented to the world on https, even if internally it's http
-	$new_config_contents =~ s/PerlSetVar EPrints_ArchiveID $id/PerlSetVar EPrints_ArchiveID $id\n    PerlSetVar EPrints_Secure yes/;
+	
 	
 	# on the off chance that there is still an HTTP only second repository (has happened) only add https if it really is https
 	if($repository->get_conf( "securehost"))
 	{
+		# add the secure option because we will be presented to the world on https, even if internally it's http
+		$new_config_contents =~ s/PerlSetVar EPrints_ArchiveID $id/PerlSetVar EPrints_ArchiveID $id\n    PerlSetVar EPrints_Secure yes/;
+
 		# add https:// to front of ServerName. Otherwise shibd won't kick in and recognise a POST request to /Shibboleth.sso
 		$new_config_contents =~ s@ServerName @# Note need https:// for Shibboleth to work\n  ServerName https://@;
 	}
@@ -378,7 +384,8 @@ CustomLog /var/log/httpd/${id}_eprints_access.log \"%h %T %l %u %t \\\"%r\\\" %>
 	RemoteIPTrustedProxy ::1
 </IfModule>
 
-Include $extra_inc_path/*.conf
+# just in case there are multiple repos, include only relevant extras
+Include $extra_inc_path/$id.*.conf
 
 <IfModule mod_shib>
 	# Shibboleth login support. 
