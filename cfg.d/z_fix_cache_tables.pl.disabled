@@ -1,7 +1,8 @@
 package EPrints::Plugin::Screen::Search;
 
-no warnings 'redefine';
+
 use strict;
+no warnings 'redefine';
 
 sub from
 {
@@ -182,8 +183,8 @@ sub from
 
 
 package URI::_query;
-no warnings 'redefine';
 use strict;
+no warnings 'redefine';
 
 # Handle ...?foo=bar&bar=foo type of query
 sub query_form {
