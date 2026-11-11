@@ -1,0 +1,241 @@
+package EPrints::Plugin::Screen::Search;
+
+no warnings 'redefine';
+use strict;
+
+sub from
+{
+	my( $self ) = @_;
+
+	my $session = $self->{session};
+	my $processor = $self->{processor};
+	my $sconf = $processor->{sconf};
+
+	# This rather oddly now checks for the special case of one parameter, but
+	# that parameter being a screenid, in which case the search effectively has
+	# no parameters and should not default to action = 'search'.
+	# maybe this can be removed later, but for a minor release this seems safest.
+	if( !EPrints::Utils::is_set( $self->{processor}->{action} ) )
+	{
+		my %params = map { $_ => 1 } $self->{session}->param();
+		foreach my $param (keys %{{$self->hidden_bits}}) {
+			delete $params{$param};
+		}
+		if( EPrints::Utils::is_set( $self->{session}->param( "output" ) ) )
+		{
+			$self->{processor}->{action} = "export";
+		}
+		elsif( scalar keys %params )
+		{
+			$self->{processor}->{action} = "search";
+		}
+		else
+		{
+			$self->{processor}->{action} = "";
+		}
+	}
+
+	my $satisfy_all = $self->{session}->param( "satisfyall" );
+	$satisfy_all = !defined $satisfy_all || $satisfy_all eq "ALL";
+
+	my $searchexp = $processor->{search};
+	if( !defined $searchexp )
+	{
+		my $format = $processor->{searchid} . "/" . $processor->{dataset}->base_id;
+		if( !defined $sconf )
+		{
+			EPrints->abort( "No available configuration for search type $format" );
+		}
+		my $keep_cache = $self->{session}->config("search_uses_cache_tables");
+		if(! defined $keep_cache)
+		{
+			$keep_cache = 1;
+		}
+		$searchexp = $session->plugin( "Search" )->plugins(
+			{
+				session => $session,
+				dataset => $self->search_dataset,
+				keep_cache => $keep_cache,
+				satisfy_all => $satisfy_all,
+				%{$sconf},
+				filters => [
+					$self->search_filters,
+					@{$sconf->{filters} || []},
+				],
+			},
+			type => "Search",
+			can_search => $format,
+		);
+		if( !defined $searchexp )
+		{
+			EPrints->abort( "No available search plugin for $format" );
+		}
+		$processor->{search} = $searchexp;
+	}
+
+	if( $searchexp->is_blank && $self->{processor}->{action} ne "newsearch" )
+	{
+		my $ok = 0;
+		if( my $id = $session->param( "cache" ) )
+		{
+			$ok = $searchexp->from_cache( $id );
+			# cache included in URL but cache no longer exists
+			if( !$ok && $self->{session}->config( 'cache_not_found_no_search' ) )
+			{
+				$self->{processor}->{search_subscreen} = "cache_not_found";
+				$self->{processor}->add_message( "warning",
+					$self->{session}->html_phrase( "lib/searchexpression:cache_not_found_warning",
+						cacheid => $self->{session}->make_text( $self->_validated_cache_param( $id ) )
+					)
+				);
+
+				return;
+			}
+		}
+		if( !$ok && (my $exp = $session->param( "exp" )) )
+		{
+			# cache expired
+			$ok = $searchexp->from_string( $exp );
+		}
+		if( !$ok )
+		{
+			for( $searchexp->from_form )
+			{
+				$self->{processor}->add_message( "warning", $_ );
+			}
+		}
+	}
+
+	$sconf->{order_methods} = {} if !defined $sconf->{order_methods};
+	if( $searchexp->param( "result_order" ) )
+	{
+		$sconf->{order_methods}->{"byrelevance"} = $sconf->{default_order} ? "byrelevance" : "";
+	}
+
+	# have we been asked to reorder?
+	if( defined( my $order_opt = $self->{session}->param( "order" ) ) )
+	{
+		my $allowed_order = 0;
+		foreach my $custom_order ( values %{$sconf->{order_methods}} )
+		{
+			$allowed_order = 1 if $order_opt eq $custom_order;
+		}
+
+		my $custom_order;
+		if( $allowed_order )
+		{
+			$custom_order = $order_opt;
+		}
+		elsif( defined $sconf->{default_order} )
+		{
+			$custom_order = $sconf->{order_methods}->{$sconf->{default_order}};
+		}
+		else
+		{
+			$custom_order = "";
+		}
+
+		$searchexp->{custom_order} = $custom_order;
+	}
+	# use default order
+	else
+	{
+		$searchexp->{custom_order} = $sconf->{order_methods}->{$sconf->{default_order}};
+	}
+
+	# feeds are always limited and ordered by -datestamp
+	if( $self->{processor}->{action} eq "export" )
+	{
+		my $output = $self->{session}->param( "output" );
+		my $export_plugin = $self->{session}->plugin( "Export::$output" );
+		if( !defined($self->{session}->param( "order" )) && defined($export_plugin) && $export_plugin->is_feed )
+		{
+			# borrow the max from latest_tool (which we're replicating anyway)
+			my $limit = $self->{session}->config(
+				"latest_tool_modes", "default", "max"
+			);
+			$limit = 20 if !$limit;
+			my $n = $self->{session}->param( "n" );
+			if( $n && $n > 0 && $n < $limit)
+			{
+				$limit = $n;
+			}
+			$searchexp->{limit} = $limit;
+			$searchexp->{custom_order} = "-datestamp";
+		}
+	}
+
+	# do actions
+	$self->EPrints::Plugin::Screen::from;
+
+	if( $searchexp->is_blank && $self->{processor}->{action} ne "export" )
+	{
+		if( $self->{processor}->{action} eq "search" )
+		{
+			$self->{processor}->add_message( "warning",
+				$self->{session}->html_phrase( 
+					"lib/searchexpression:least_one" ) );
+		}
+		$self->{processor}->{search_subscreen} = "form";
+	}
+}
+
+
+package URI::_query;
+no warnings 'redefine';
+use strict;
+
+# Handle ...?foo=bar&bar=foo type of query
+sub query_form {
+    my $self = shift;
+    my $old = $self->query;
+    if (@_) {
+        # Try to set query string
+        my $delim;
+        my $r = $_[0];
+        if (ref($r) eq "ARRAY") {
+            $delim = $_[1];
+            @_ = @$r;
+        }
+        elsif (ref($r) eq "HASH") {
+            $delim = $_[1];
+            @_ = %$r;
+        }
+        $delim = pop if @_ % 2;
+
+        my @query;
+        while (my($key,$vals) = splice(@_, 0, 2)) {
+            $key = '' unless defined $key;
+            $key =~ s/([;\/?:@&=+,\$\[\]%])/ URI::Escape::escape_char($1)/eg;
+            $key =~ s/ /+/g;
+            $vals = [ref($vals) eq "ARRAY" ? @$vals : $vals];
+            for my $val (@$vals) {
+                if(defined $val){
+                    $val =~ s/([;\/?:@&=+,\$\[\]%])/ URI::Escape::escape_char($1)/eg;
+                    $val =~ s/ /+/g;
+                    push(@query, "$key=$val");
+                }
+            }
+        }
+
+        # simple alphabetical sort of parameters so we can cache URLs more easily
+        @query = sort @query;
+
+        if (@query) {
+            unless ($delim) {
+                $delim = $1 if $old && $old =~ /([&;])/;
+                $delim ||= $URI::DEFAULT_QUERY_FORM_DELIMITER || "&";
+            }
+            $self->query(join($delim, @query));
+        }
+        else {
+            $self->query(undef);
+        }
+    }
+    return if !defined($old) || !length($old) || !defined(wantarray);
+    return unless $old =~ /=/; # not a form
+    map { s/\+/ /g; uri_unescape($_) }
+         map { /=/ ? split(/=/, $_, 2) : ($_ => '')} split(/[&;]/, $old);
+}
+
+1;
