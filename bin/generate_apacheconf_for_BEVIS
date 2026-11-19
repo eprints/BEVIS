@@ -154,6 +154,12 @@ if($found_archives == 0){
 	exit 1;
 }
 
+if(!defined $default_repo_id)
+{
+	print "No default archive found - was SSL configured?\n";
+	exit 1;
+}
+
 
 
 my $apache_eprints_conf = EPrints::Config::get( "cfg_path" )."/apache_internal.conf";
@@ -417,25 +423,23 @@ Include $extra_inc_path/$id.*.conf
 	$new_config_contents =~ s/  # Include any legacy directives\n//;
 	$new_config_contents =~ s/  Include $apachevhost\n\n//;
 
-	# note - can't easily redirect aliases here, because to get to the internal apache config you've gone through nginx and SSL
-	# and for any other domain the SSL certificate will have been invalid.
-	# to redirect HTTP that will have to be done in nginx config
-# 	my $securehost = $repository->get_conf( "securehost" );
-# 	foreach my $alias (@{$repository->config( "aliases" )})
-# 	{
-# 		if($alias->{'redirect'} eq "yes")
-# 		{
-# 			my $name = $alias->{name};
-# 			my $alias_conf = "<VirtualHost *:3000>
-# 	ServerName $name
-# 	Redirect / https://$securehost/
-# </VirtualHost>";
+	# note - this redirect is being done in apache, so you've got to have made it through nginx and anubis
+	# shouldn't be an issue. But nginx will need to have a certificate that supports the alias domain
+	# otherwise most users will never get this far
+	my $securehost = $repository->get_conf( "securehost" );
+	foreach my $alias (@{$repository->config( "aliases" )})
+	{
+		if($alias->{'redirect'} eq "yes")
+		{
+			my $name = $alias->{name};
+			my $alias_conf = "<VirtualHost *:3000>
+	ServerName $name
+	Redirect / https://$securehost/
+</VirtualHost>";
 
-# 			$new_config_contents .= $alias_conf;
-# 		}
-# 	}
-
-
+			$new_config_contents .= $alias_conf;
+		}
+	}
 
 	my $backup = EPrints->system->write_config_file( $eprints_apache_conf_file, $new_config_contents );
 	if( $backup )
@@ -450,9 +454,26 @@ Include $extra_inc_path/$id.*.conf
 
 }
 
+my @nginx_config_files = qw(eprints_nginx_rate_limiting_3.4.8plus.conf nginx_front_facing.conf);
+
+if( ! -e "$base_path/VERSION")
+{
+	#no version file present, so this is EPrints 3.4.7 and below
+	@nginx_config_files = qw(eprints_nginx_rate_limiting.conf nginx_front_facing.conf);
+
+	if( -e "$nginx_conf_dir/eprints_nginx_rate_limiting.conf")
+	{
+		print "WARNING - you have the old nginx config file (for EPrints 3.4.7 and below) but appear to be a newer version of EPrints.\n";
+	}
+	
+}
+
+# note - if we update BEVIS on a 3.4.7 instance nothing should change, the nginx config file has the same name
+# if we were to upgrade EPrints to 3.4.8+ some manual intervention would be required to remove the old config file
+# could automate this, but I'm reluctant to go around removing config.
 
 #symlink default nginx config into place in the archive
-foreach my $nginx_file (qw(eprints_nginx_rate_limiting.conf nginx_front_facing.conf))
+foreach my $nginx_file (@nginx_config_files)
 {
 	my $file_in_place = "$nginx_conf_dir/$nginx_file";
 	
