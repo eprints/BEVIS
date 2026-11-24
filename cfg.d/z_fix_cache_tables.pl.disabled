@@ -1,3 +1,9 @@
+# For EPrints 3.4.7 and below, there existed a cache mechanism for searches in the database
+# However, it is quickly overwhelmed by the sheer quantity of searches we now get
+# Instead it is less CPU intensive to turn off this old system and use nginx' cache.
+# This backport, combined with, z_disable_cache_tables.pl, disables the cache tables
+
+
 package EPrints::Plugin::Screen::Search;
 
 
