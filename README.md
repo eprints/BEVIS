@@ -51,7 +51,7 @@ Nginx also listens on port 10001, behind Anubis and in front of EPrints. It will
 
 EPrints is still unstable using mpm_event, reducing the maximum number of simultaneous requests it can support. Using mpm_prefork it is stable, and the caching and filtering from Nginx appears to be sufficient to still serve enough requests in a timely fashion.
 
-Note that there are file handle leaks with Xapian search, so MaxConnectionsPerChild is set to 1000 rather than the default of unlimited.
+MaxConnectionsPerChild is set to 1000 rather than the default of unlimited in case of any remaining file handle and memory leaks.
 
 
 ## Detailed Diagram
@@ -127,11 +127,12 @@ d /var/log/nginx     711 root  root -
 13. Replace the default nginx configuration to one which will `include /opt/eprints3/ingredients/BEVIS/nginx/*.conf;`
 14. For versions of EPrints 3.4.7 and below, symlink in some fixes:
     1.  `ln -s /opt/eprints3/ingredients/BEVIS/cfg.d/z_fix_cookies.pl.disabled /opt/eprints3/archives/REPO_ID/cfg/cfg.d/z_fix_cookies.pl`
-15. Backup default apache config and replace with apache/apache.conf. This new config file:
+    2.  `ln -s /opt/eprints3/ingredients/BEVIS/cfg.d/z_fix_cache_tables.pl.disabled /opt/eprints3/archives/REPO_ID/cfg/cfg.d/z_fix_cache_tables.pl`
+15. Backup default apache config (in /etc/httpd/conf/httpd.conf on RHEL) and replace with apache/apache.conf. This new config file is purely for an internal EPrints instance and:
     1.  Uses mpm_prefork
     2.  `Include /opt/eprints3/cfg/apache_internal.conf`
     3.  `MaxConnectionsPerChild 1000`
-16. Run `/opt/eprints3/ingredients/anubis/bin/generate_apacheconf_for_BEVIS` to update EPrints Apache config files
+16. Run `/opt/eprints3/ingredients/anubis/bin/generate_apacheconf_for_BEVIS` to update EPrints Apache config files (now in cfg/apache_internal)
 17. Restart apache and nginx: `sudo systemctl restart httpd nginx` 
 
 If all goes well it should work!
@@ -139,7 +140,7 @@ If all goes well it should work!
 ### Details
 Nginx is run as the user apache and group eprints so that the cache can be cleared via the admin panel in EPrints.
 
-`z_fix_apacheconf.pl` and `z_fix_cookies.pl` patch core code to simplify cookie names and re-arrange the apache configuration. Cookie names previously had the hostname in the name of the cookie and weren't deleted when logging out - making configuring the cache harder. The perl handler was previously configured in securevhost.conf and is now in the archive configuration.
+`z_fix_cache_tables.pl` and `z_fix_cookies.pl` patch core code. z_fix_cookies simplifies cookie names and z_fix_cache_tables disables the database cache tables for searches. Cookie names previously had the hostname in the name of the cookie and weren't deleted when logging out - making configuring the cache harder. The perl handler was previously configured in securevhost.conf and is now in the archive configuration.
 
 The aim is for these fixes to be included in core code for the next releases of EPrints (3.4.8 and 3.5.1).
 
@@ -178,7 +179,7 @@ Check the X-Cache-Status header of responses. Note that if you are logged in, ng
 
 If anything has gone wrong, or for whatever reason you need to remove BEVIS:
 
- - revert your original Apache config
+ - revert your original Apache config (in /etc)
  - disable nginx
  - restart Apache
 
