@@ -461,11 +461,14 @@ if( ! -e "$base_path/VERSION")
 	#no version file present, so this is EPrints 3.4.7 and below
 	@nginx_config_files = qw(eprints_nginx_rate_limiting.conf nginx_front_facing.conf);
 
+	
+	
+}else{
+	# VERSION file exists, therefore v3.4.8+
 	if( -e "$nginx_conf_dir/eprints_nginx_rate_limiting.conf")
 	{
 		print "WARNING - you have the old nginx config file (for EPrints 3.4.7 and below) but appear to be a newer version of EPrints.\n";
 	}
-	
 }
 
 # note - if we update BEVIS on a 3.4.7 instance nothing should change, the nginx config file has the same name
