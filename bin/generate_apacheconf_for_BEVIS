@@ -168,7 +168,8 @@ my $nginx_conf_dir = "$archives_path/$default_repo_id/nginx";
 
 my $inc_path = "$base_path/cfg/apache_internal";
 # extra files to be included that may require customising
-my $extra_inc_path = "$base_path/cfg/apache_internal/extra";
+my $extra_inc_path = "$archives_path/$default_repo_id/apache";
+# extras used to be at $base_path/cfg/apache_internal/extra, but this is not captured by source control for the archive. No deployments made extensive use of this
 
 EPrints->system->mkdir( $inc_path );
 EPrints->system->mkdir( $extra_inc_path );
@@ -357,7 +358,7 @@ foreach my $repository ( values %reps )
 		my $logging_config_contents = "
 
 # This file configures the apache logs of EPrints itself. Only requests passed through anubis to EPrints can make it this far.
-# This file will not be overwritten by generate_apacheconf_for_BEVIS, so you can modify it.
+# After this file is generated it will not be overwritten by generate_apacheconf_for_BEVIS, so you can modify it.
 
 ErrorLog /var/log/httpd/${id}_eprints_error.log
 # also log response duration and anubis cookie presence, to aid analysing the impact
