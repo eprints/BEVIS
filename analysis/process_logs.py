@@ -228,5 +228,14 @@ if __name__ == "__main__":
     # print(f"Day: {examine_day} front: {front_hits} (100%) behind Anubis: {post_anubis_hits} ({100*post_anubis_hits/front_hits:.2f}%) after cache: {post_cache_hits} ({100*post_cache_hits/front_hits:.2f}%)")
     print(f"Day: {examine_day}")
     for hit_type in ["total", "high_cpu", "view", "eprint"]:
-        print(
-            f"{hit_type.title()} front: {front_hits[hit_type]} (100%) behind Anubis: {post_anubis_hits[hit_type]} ({100 * post_anubis_hits[hit_type] / front_hits[hit_type]:.2f}%) after cache: {post_cache_hits[hit_type]} ({100 * post_cache_hits[hit_type] / front_hits[hit_type]:.2f}%)")
+        try:
+            # front_hits =  front_hits[hit_type]
+            anubis_pass = 100 * post_anubis_hits[hit_type] / front_hits[hit_type]
+            anubis_blocked = 100 - anubis_pass
+            cache_pass_of_total = 100 * post_cache_hits[hit_type] / front_hits[hit_type]
+            cache_pass = 100 * post_cache_hits[hit_type] / post_anubis_hits[hit_type]
+            cache_blocked = 100 - cache_pass
+            print(
+                f"{hit_type.title()} front: {front_hits[hit_type]} (100%) behind Anubis: {post_anubis_hits[hit_type]} (blocked {anubis_blocked:.0f}%) after cache: {post_cache_hits[hit_type]}, (blocked {cache_blocked:.0f}%), {cache_pass_of_total:.1f}% reached EPrints")
+        except Exception as e:
+            print(e)
