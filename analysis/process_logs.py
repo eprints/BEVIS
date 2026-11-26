@@ -155,10 +155,20 @@ class Log:
 
     def is_logfile_relevant(self):
         if self.log_file_path.endswith("gz"):
-            #actually takes longer to try and do this with a gziped file, just check first line
-            with gzip.open(self.log_file_path, "rb") as gzipfile:
-                return self.is_logfile_relevant_inner(gzipfile, firstline_only=True)
-            # return True
+
+            datestring = self.log_file_path[self.log_file_path.rindex('-')+1 : self.log_file_path.rindex('.')]
+            # filename_date = datetime.datetime.fromisoformat(datestring).date()
+            format = "%Y%m%d"
+            filename_date = datetime.datetime.strptime(datestring, format).date()
+
+            if filename_date < self.from_date + datetime.timedelta(days=-1):
+                # definitely too old, this was rotated before the relevant day
+                return False
+
+            # #actually takes longer to try and do this with a gziped file, just check first line
+            # with gzip.open(self.log_file_path, "rb") as gzipfile:
+            #     return self.is_logfile_relevant_inner(gzipfile, firstline_only=True)
+            return True
         else:
             with open(self.log_file_path, "rb") as file:
                 return self.is_logfile_relevant_inner(file)
@@ -393,6 +403,8 @@ def parse_args():
     parser.add_argument('-a', '--apache', type=str, help="Path to the apache logs", default="/var/log/httpd")
     parser.add_argument('-n', '--nginx', type=str, help="Path to the nginx logs", default="/var/log/nginx")
     parser.add_argument('-d', '--day', type=str, help="Day to process, YYYY-MM-DD", default=None)
+    parser.add_argument('-s', '--start', type=int, help="Start day, relative to today (instead of --day)", default=None)
+    parser.add_argument('-r', '--days', type=int, help="Days to process", default=1)
 
     # TODO options for more advanced analysis, by default we will just process hits for yesterday
     return parser.parse_args()
@@ -401,22 +413,31 @@ if __name__ == "__main__":
     args = parse_args()
     nginx_path = args.nginx#"C:/Users/lpw1r25/Documents/BEVIS notes/nginx_logs"
     apache_path = args.apache#"C:/Users/lpw1r25/Documents/BEVIS notes/apache_logs"
-    examine_day = datetime.date.fromisoformat(args.day)#datetime.date(2026, 11, 18)
-    if examine_day is None:
-        examine_day = datetime.datetime.today().date()
+    #datetime.date(2026, 11, 18)
+    if args.day is None:
+        if args.start is None:
+            examine_day = datetime.datetime.today().date()
+        else:
+            examine_day = datetime.datetime.today().date() + datetime.timedelta(days=args.start)
+    else:
+        examine_day = datetime.date.fromisoformat(args.day)
 
-    front_logs = get_logs_from_dir(nginx_path, examine_day, None, "front_access.log", nginx=True)
+    until_day = examine_day + datetime.timedelta(days=args.days)
+
+    print(f"Processing from {examine_day} to {until_day}")
+
+    front_logs = get_logs_from_dir(nginx_path, examine_day, until_day, "front_access.log", nginx=True)
     # front_hits = get_hits_for_logs(front_logs)
 
-    post_anubis_logs = get_logs_from_dir(nginx_path, examine_day, None, "access.log", nginx=True)
+    post_anubis_logs = get_logs_from_dir(nginx_path, examine_day, until_day, "access.log", nginx=True)
     # post_anubis_hits = get_hits_for_logs(post_anubis_logs)
 
-    post_cache_logs = get_logs_from_dir(apache_path, examine_day, None, midfix="_eprints_access.log", nginx=False)
+    post_cache_logs = get_logs_from_dir(apache_path, examine_day, until_day, midfix="_eprints_access.log", nginx=False)
     # post_cache_hits = get_hits_for_logs(post_cache_logs)
 
     # front_hits = post_anubis_hits = 0
     # print(f"Day: {examine_day} front: {front_hits} (100%) behind Anubis: {post_anubis_hits} ({100*post_anubis_hits/front_hits:.2f}%) after cache: {post_cache_hits} ({100*post_cache_hits/front_hits:.2f}%)")
-    print(f"Day: {examine_day}")
+    # print(f"Day: {examine_day}")
     print("All percentages are fractions of the total front hits")
 
     processor = BEVISProcessor(front_logs, post_anubis_logs, post_cache_logs)
@@ -424,7 +445,11 @@ if __name__ == "__main__":
     # print(json.dumps(processor.processed_results, indent=2))
 
     for time_key in sorted([key for key in processor.processed_results]):
-        print(f"{time_key} : Total hits {processor.processed_results[time_key]['total']['front_total']} Anubis blocked {processor.processed_results[time_key]['total']['anubis_blocked']:.1f}% Cache hit {processor.processed_results[time_key]['total']['hit_cache']:.1f}% Rate limited {processor.processed_results[time_key]['total']['rate_limited']:.1f}% Reached EPrints {processor.processed_results[time_key]['total']['reached_eprints_total']:.1f}% ({processor.processed_results[time_key]['total']['reached_eprints_total_count']})")
+        try:
+            print(f"{time_key} : Total hits {processor.processed_results[time_key]['total']['front_total']} Anubis blocked {processor.processed_results[time_key]['total']['anubis_blocked']:.1f}% Cache hit {processor.processed_results[time_key]['total']['hit_cache']:.1f}% Rate limited {processor.processed_results[time_key]['total']['rate_limited']:.1f}% Reached EPrints {processor.processed_results[time_key]['total']['reached_eprints_total']:.1f}% ({processor.processed_results[time_key]['total']['reached_eprints_total_count']})")
+        except:
+            print(f"{time_key} : incomplete data")
+            # pass
 
     with open("results.json", "w") as jsonfile:
         json.dump(processor.processed_results, jsonfile, indent=2)
